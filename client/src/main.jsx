@@ -1,5 +1,4 @@
 
-// @ts-nocheck
 import React, {
   useCallback,
   useEffect,
@@ -8,29 +7,65 @@ import React, {
   useState
 } from "react";
 import { createRoot } from "react-dom/client";
+import {
+  ArrowDown,
+  ArrowUp,
+  Bell,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Clock3,
+  Headphones,
+  History,
+  LogOut,
+  Minus,
+  MoreHorizontal,
+  Plus,
+  RefreshCw,
+  TrendingUp,
+  UserRound,
+  Wallet,
+  X
+} from "lucide-react";
 import "./style.css";
-const API = "/api";
-const C = {
-  bg: "#080e18",
-  panel: "#101a29",
-  panel2: "#172437",
-  border: "#27364b",
-  grid: "#1c2b3e",
-  text: "#eef4ff",
-  muted: "#8195ad",
-  green: "#00c896",
-  red: "#ff4968",
-  blue: "#397bfa",
-  yellow: "#ffca60"
-};
+
+/* =========================================================
+   CONFIG
+========================================================= */
+
+const API = import.meta.env.VITE_API_URL || "/api";
+const TOKEN_KEY = "qx_token";
 const PAIRS = ["EUR/USD", "GBP/USD", "BTC/USD"];
-const fmt = n => Number(n || 0).toFixed(2);
-const decimals = s => s === "BTC/USD" ? 2 : 5;
-function token() {
-  return sessionStorage.getItem("qx_token") || "";
-}
-async function api(path, method = "GET", body) {
-  const response = await fetch(API + path, {
+
+const COLOR = {
+  bg: "#1c1e2b",
+  panel: "#292d3d",
+  panel2: "#303447",
+  border: "#393e52",
+  text: "#f5f6fb",
+  muted: "#969bad",
+  green: "#12b96d",
+  red: "#e64d3c",
+  blue: "#348fe9"
+};
+
+const fmtMoney = value =>
+  Number(value || 0).toFixed(2);
+
+const priceDigits = symbol =>
+  symbol === "BTC/USD" ? 2 : 5;
+
+const fmtPrice = (value, symbol) =>
+  value == null || !Number.isFinite(Number(value))
+    ? "—"
+    : Number(value).toFixed(priceDigits(symbol));
+
+const token = () =>
+  sessionStorage.getItem(TOKEN_KEY) || "";
+
+async function request(path, method = "GET", body) {
+  const response = await fetch(`${API}${path}`, {
     method,
     cache: "no-store",
     headers: {
@@ -39,533 +74,522 @@ async function api(path, method = "GET", body) {
         ? { Authorization: `Bearer ${token()}` }
         : {})
     },
-    ...(body !== undefined
-      ? { body: JSON.stringify(body) }
-      : {})
+    ...(body === undefined
+      ? {}
+      : { body: JSON.stringify(body) })
   });
-  const result = await response.json().catch(() => ({}));
+
+  const data = await response.json().catch(() => ({}));
+
   if (!response.ok) {
-    throw Error(result.error || `HTTP ${response.status}`);
+    throw new Error(
+      data.error ||
+      data.message ||
+      `Request failed (${response.status})`
+    );
   }
-  return result;
+
+  return data;
 }
-const buttonStyle = {
-  border: 0,
-  borderRadius: 9,
-  padding: "12px 16px",
-  fontWeight: 800,
-  color: "white",
-  cursor: "pointer"
-};
-const inputStyle = {
-  display: "block",
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "12px 14px",
-  marginTop: 7,
-  background: C.bg,
-  border: `1px solid ${C.border}`,
-  borderRadius: 9,
-  color: C.text,
-  outline: "none"
-};
-function Panel({ children, style }) {
+
+function IconButton({
+  children,
+  title,
+  onClick,
+  disabled = false,
+  style = {}
+}) {
   return (
-    <div style={{
-      background: C.panel,
-      border: `1px solid ${C.border}`,
-      borderRadius: 13,
-      padding: 18,
-      ...style
-    }}>
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: "grid",
+        placeItems: "center",
+        padding: 0,
+        width: 29,
+        height: 29,
+        borderRadius: 5,
+        background: COLOR.panel2,
+        color: COLOR.text,
+        flexShrink: 0,
+        ...style
+      }}
+    >
       {children}
+    </button>
+  );
+}
+
+/* =========================================================
+   AUTHENTICATION
+========================================================= */
+
+function Auth({ onSuccess }) {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    country: "India"
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+
+    try {
+      const payload =
+        mode === "register"
+          ? form
+          : {
+              email: form.email,
+              password: form.password
+            };
+
+      const result = await request(
+        `/auth/${mode}`,
+        "POST",
+        payload
+      );
+
+      if (!result.token) {
+        throw new Error("Authentication token missing");
+      }
+
+      sessionStorage.setItem(TOKEN_KEY, result.token);
+      onSuccess(result.user || {});
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="auth">
+      <div className="authcard">
+        <div className="logo">
+          <span style={{ color: COLOR.green }}>◆</span>
+          {" "}Quotexx
+        </div>
+
+        <p className="hint">Trading account</p>
+
+        <h2>
+          {mode === "login"
+            ? "Welcome back"
+            : "Create your account"}
+        </h2>
+
+        <form onSubmit={submit}>
+          {mode === "register" && (
+            <>
+              <label>
+                Full name
+                <input
+                  required
+                  value={form.name}
+                  onChange={e =>
+                    setForm(p => ({
+                      ...p,
+                      name: e.target.value
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Country
+                <input
+                  required
+                  value={form.country}
+                  onChange={e =>
+                    setForm(p => ({
+                      ...p,
+                      country: e.target.value
+                    }))
+                  }
+                />
+              </label>
+            </>
+          )}
+
+          <label>
+            Email
+            <input
+              required
+              type="email"
+              value={form.email}
+              onChange={e =>
+                setForm(p => ({
+                  ...p,
+                  email: e.target.value
+                }))
+              }
+            />
+          </label>
+
+          <label>
+            Password
+            <input
+              required
+              type="password"
+              value={form.password}
+              onChange={e =>
+                setForm(p => ({
+                  ...p,
+                  password: e.target.value
+                }))
+              }
+            />
+          </label>
+
+          <button type="submit" disabled={busy}>
+            {busy
+              ? "Please wait..."
+              : mode === "login"
+                ? "Login"
+                : "Register"}
+          </button>
+        </form>
+
+        {error && <p className="error">{error}</p>}
+
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            setError("");
+            setMode(
+              mode === "login" ? "register" : "login"
+            );
+          }}
+        >
+          {mode === "login"
+            ? "Create an account"
+            : "Already have an account? Login"}
+        </button>
+      </div>
     </div>
   );
 }
-function Field({ label, ...props }) {
-  return (
-    <label style={{
-      display: "block",
-      color: C.muted,
-      fontSize: 13,
-      marginBottom: 16
-    }}>
-      {label}
-      <input {...props} style={{
-        ...inputStyle,
-        ...(props.style || {})
-      }} />
-    </label>
-  );
-}
 
-function LiveTradingChart({
+/* =========================================================
+   LIVE CANDLE CHART
+   - Canvas based
+   - Horizontal drag
+   - Zoom
+   - Responsive height
+   - Price axis
+   - Time axis
+========================================================= */
+
+function CandleChart({
   symbol,
-  candles = [],
+  candles,
   currentPrice,
-  trades = [],
-  connected = false,
-  now
+  openTrades,
+  connected
 }) {
+  const holderRef = useRef(null);
   const canvasRef = useRef(null);
-  const containerRef = useRef(null);
-  const crosshairRef = useRef(null);
-  const dragRef = useRef(null);
-  const scaleRef = useRef(null);
-  const dataRef = useRef({});
-  const scrollRef = useRef(0);
+  const pointerRef = useRef(null);
+  const chartRef = useRef({});
 
-  const [size, setSize] = useState({
-    width: 900,
-    height: 560
+  const [dimensions, setDimensions] = useState({
+    width: 700,
+    height: 350
   });
 
-  const [spacing, setSpacing] = useState(12);
-  const [scrollOffset, setScrollOffset] = useState(0);
-
-  const spacingRef = useRef(spacing);
-  spacingRef.current = spacing;
-  scrollRef.current = scrollOffset;
-
-  const priceDecimals =
-    symbol === "BTC/USD" ? 2 : 5;
-
-  const colors = {
-    background: "#080e18",
-    panel: "#111c2b",
-    border: "#203047",
-    grid: "#1b2a3d",
-    text: "#e8f0fa",
-    muted: "#91a4bd",
-    green: "#00c896",
-    red: "#ff4968",
-    crosshair: "#72839b",
-    blue: "#315d95"
-  };
+  const [gap, setGap] = useState(13);
+  const [offset, setOffset] = useState(0);
+  const [showMenu, setShowMenu] = useState(false);
 
   const validCandles = useMemo(() => {
-    const result = candles
-      .filter(c =>
-        c &&
-        Number.isFinite(Number(c.time)) &&
-        ["open", "high", "low", "close"].every(
+    if (!Array.isArray(candles)) return [];
+
+    const map = new Map();
+
+    for (const c of candles) {
+      if (
+        !c ||
+        !Number.isFinite(Number(c.time)) ||
+        ["open", "high", "low", "close"].some(
           key =>
-            c[key] !== null &&
-            c[key] !== undefined &&
-            Number.isFinite(Number(c[key]))
+            c[key] == null ||
+            !Number.isFinite(Number(c[key]))
         )
-      )
-      .map(c => ({
+      ) {
+        continue;
+      }
+
+      map.set(Number(c.time), {
         time: Number(c.time),
         open: Number(c.open),
         high: Number(c.high),
         low: Number(c.low),
         close: Number(c.close)
-      }))
-      .sort((a, b) => a.time - b.time);
+      });
+    }
 
-    // Avoid duplicate timestamps.
-    return result.filter(
-      (c, index) =>
-        index === result.length - 1 ||
-        c.time !== result[index + 1].time
+    return [...map.values()].sort(
+      (a, b) => a.time - b.time
     );
   }, [candles]);
 
-  const visibleCount = Math.max(
-    8,
-    Math.floor(
-      Math.max(100, size.width - 120) / spacing
-    )
-  );
-
-  const maxScroll = Math.max(
-    0,
-    validCandles.length - visibleCount
-  );
-
-  const effectiveScroll = Math.min(
-    scrollOffset,
-    maxScroll
-  );
-
-  dataRef.current = {
-    symbol,
-    candles: validCandles,
-    currentPrice,
-    trades,
-    connected,
-    scrollOffset: effectiveScroll,
-    spacing
-  };
-
-  const zoomIn = () => {
-    setSpacing(v => Math.min(32, v + 2));
-    scaleRef.current = null;
-  };
-
-  const zoomOut = () => {
-    setSpacing(v => Math.max(5, v - 2));
-    scaleRef.current = null;
-  };
-
-  const goLive = () => {
-    setScrollOffset(0);
-    scrollRef.current = 0;
-    scaleRef.current = null;
-  };
-
-  const resetChart = () => {
-    setSpacing(12);
-    setScrollOffset(0);
-    scrollRef.current = 0;
-    scaleRef.current = null;
-  };
-
-  const scrollChart = delta => {
-    setScrollOffset(previous =>
-      Math.max(
-        0,
-        Math.min(maxScroll, previous + delta)
-      )
-    );
-  };
-
-  // Responsive sizing.
   useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
+    const el = holderRef.current;
+    if (!el) return;
 
-    const updateSize = () => {
-      setSize({
-        width: Math.max(280, element.clientWidth),
-        height: Math.max(400, element.clientHeight)
+    const measure = () => {
+      setDimensions({
+        width: Math.max(280, el.clientWidth),
+        height: Math.max(150, el.clientHeight)
       });
     };
 
-    updateSize();
+    measure();
 
-    const observer = new ResizeObserver(updateSize);
-    observer.observe(element);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
 
     return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    scaleRef.current = null;
-    setScrollOffset(0);
+    setOffset(0);
   }, [symbol]);
 
-  // Canvas renderer.
+  const visibleCount = Math.max(
+    8,
+    Math.floor((dimensions.width - 110) / gap)
+  );
+
+  const maxOffset = Math.max(
+    0,
+    validCandles.length - visibleCount
+  );
+
+  const safeOffset = Math.min(offset, maxOffset);
+
+  chartRef.current = {
+    candles: validCandles,
+    currentPrice,
+    openTrades,
+    symbol,
+    offset: safeOffset,
+    gap
+  };
+
+  const zoom = change =>
+    setGap(value =>
+      Math.max(6, Math.min(30, value + change))
+    );
+
+  const scroll = change =>
+    setOffset(value =>
+      Math.max(
+        0,
+        Math.min(maxOffset, value + change)
+      )
+    );
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const context = canvas.getContext("2d");
-    if (!context) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-    const dpr = Math.min(
+    const width = dimensions.width;
+    const height = dimensions.height;
+    const ratio = Math.min(
       window.devicePixelRatio || 1,
       2
     );
 
-    const width = size.width;
-    const height = size.height;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
 
-    canvas.width = Math.round(width * dpr);
-    canvas.height = Math.round(height * dpr);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-    context.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    let animationFrame;
-    let active = true;
-    let smoothPrice = null;
-
-    const priceText = value =>
-      Number(value).toFixed(priceDecimals);
-
-    const timeText = timestamp =>
-      new Date(timestamp).toLocaleTimeString(
-        "en-GB",
-        {
-          timeZone: "Asia/Kolkata",
-          hour: "2-digit",
-          minute: "2-digit"
-        }
-      );
+    let frame;
+    let running = true;
 
     const draw = () => {
-      if (!active) return;
+      if (!running) return;
 
       const {
         candles: all = [],
-        currentPrice: livePrice,
-        trades: activeTrades = [],
-        scrollOffset: offset = 0,
-        spacing: candleGap = 12
-      } = dataRef.current;
+        currentPrice: live,
+        openTrades: trades = [],
+        symbol: pair,
+        offset: scrollOffset = 0,
+        gap: spacing = 13
+      } = chartRef.current;
 
-      const ctx = context;
-
-      const left = 14;
-      const right = width < 480 ? 77 : 90;
-      const top = 18;
-      const bottom = 34;
-
+      const left = 6;
+      const right = width < 500 ? 72 : 85;
+      const top = 12;
+      const bottom = 27;
       const plotRight = width - right;
       const plotBottom = height - bottom;
-      const plotWidth = plotRight - left;
       const plotHeight = plotBottom - top;
 
       ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = colors.background;
+      ctx.fillStyle = COLOR.bg;
       ctx.fillRect(0, 0, width, height);
 
       if (!all.length) {
-        ctx.fillStyle = colors.muted;
-        ctx.font = "14px Arial";
+        ctx.fillStyle = COLOR.muted;
         ctx.textAlign = "center";
+        ctx.font = "12px Arial";
         ctx.fillText(
-          "Waiting for candle data...",
+          "Waiting for candle data",
           width / 2,
           height / 2
         );
 
-        animationFrame = requestAnimationFrame(draw);
+        frame = requestAnimationFrame(draw);
         return;
       }
 
-      // Reserve 4 candle spaces after latest candle.
-      const futureSpace = Math.max(
-        20,
-        Math.min(60, candleGap * 4)
-      );
-
-      const capacity = Math.max(
+      const count = Math.max(
         8,
-        Math.floor(
-          Math.max(
-            candleGap * 8,
-            plotWidth - futureSpace
-          ) / candleGap
-        )
+        Math.floor((plotRight - 40) / spacing)
       );
 
-      const safeOffset = Math.min(
-        offset,
-        Math.max(0, all.length - capacity)
+      const boundedOffset = Math.min(
+        scrollOffset,
+        Math.max(0, all.length - count)
       );
 
-      const endIndex = all.length - safeOffset;
-      const startIndex = Math.max(
-        0,
-        endIndex - capacity
-      );
-
+      const end = all.length - boundedOffset;
       const rows = all.slice(
-        startIndex,
-        endIndex
+        Math.max(0, end - count),
+        end
       );
 
       if (!rows.length) {
-        animationFrame = requestAnimationFrame(draw);
+        frame = requestAnimationFrame(draw);
         return;
       }
 
-      const last = rows[rows.length - 1];
+      const latest = rows.at(-1);
 
-      const lastX = plotRight - futureSpace;
+      const livePrice =
+        boundedOffset === 0 &&
+        live != null &&
+        Number.isFinite(Number(live))
+          ? Number(live)
+          : latest.close;
 
-      const xAt = index =>
-        lastX -
-        (rows.length - 1 - index) * candleGap;
-
-      // Calculate visible price range.
       const values = rows.flatMap(c => [
-        c.high,
-        c.low
+        c.low,
+        c.high
       ]);
 
-      const isLiveView = safeOffset === 0;
+      values.push(livePrice);
 
-      const serverPrice =
-        livePrice !== null &&
-        livePrice !== undefined &&
-        Number.isFinite(Number(livePrice))
-          ? Number(livePrice)
-          : all[all.length - 1].close;
-
-      if (
-        smoothPrice === null ||
-        !Number.isFinite(smoothPrice)
-      ) {
-        smoothPrice = serverPrice;
+      for (const t of trades) {
+        if (
+          t.entryPrice != null &&
+          Number.isFinite(Number(t.entryPrice))
+        ) {
+          values.push(Number(t.entryPrice));
+        }
       }
 
-      smoothPrice +=
-        (serverPrice - smoothPrice) * 0.14;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
 
-      const markerPrice = isLiveView
-        ? smoothPrice
-        : last.close;
-
-      values.push(markerPrice);
-
-      const initialMin = Math.min(...values);
-      const initialMax = Math.max(...values);
-
-      const initialRange = Math.max(
-        initialMax - initialMin,
-        symbol === "BTC/USD" ? 1 : 0.00005
-      );
-
-      activeTrades.forEach(trade => {
-        const entry = Number(trade.entryPrice);
-
-        if (
-          trade.entryPrice != null &&
-          Number.isFinite(entry) &&
-          Math.abs(entry - markerPrice) <
-            initialRange * 2
-        ) {
-          values.push(entry);
-        }
-      });
-
-      const minValue = Math.min(...values);
-      const maxValue = Math.max(...values);
+      const minimumRange =
+        pair === "BTC/USD" ? 1 : 0.00005;
 
       const range = Math.max(
-        maxValue - minValue,
-        symbol === "BTC/USD" ? 2 : 0.00008
+        max - min,
+        minimumRange
       );
 
-      const targetMin = minValue - range * 0.22;
-      const targetMax = maxValue + range * 0.22;
+      const low = min - range * 0.2;
+      const high = max + range * 0.2;
 
-      // Price scale stays stable while live updates.
-      if (!scaleRef.current) {
-        scaleRef.current = {
-          min: targetMin,
-          max: targetMax
-        };
-      } else {
-        const scale = scaleRef.current;
-
-        const minSpeed =
-          targetMin < scale.min ? 0.20 : 0.025;
-
-        const maxSpeed =
-          targetMax > scale.max ? 0.20 : 0.025;
-
-        scale.min +=
-          (targetMin - scale.min) * minSpeed;
-
-        scale.max +=
-          (targetMax - scale.max) * maxSpeed;
-      }
-
-      const scaleMin = scaleRef.current.min;
-      const scaleMax = scaleRef.current.max;
-
-      const scaleRange = Math.max(
-        scaleMax - scaleMin,
-        0.00000001
-      );
-
-      const yAt = price =>
+      const y = price =>
         top +
-        ((scaleMax - price) / scaleRange) *
+        ((high - price) / (high - low)) *
           plotHeight;
 
-      // Clip chart to plotting region.
+      const x = index =>
+        plotRight -
+        38 -
+        (rows.length - 1 - index) * spacing;
+
+      // Grid
+      ctx.strokeStyle = "#353849";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i <= 5; i++) {
+        const yy =
+          top + (plotHeight * i) / 5;
+
+        ctx.beginPath();
+        ctx.moveTo(left, yy);
+        ctx.lineTo(plotRight, yy);
+        ctx.stroke();
+      }
+
+      for (let i = 0; i < rows.length; i += 8) {
+        const xx = x(i);
+
+        ctx.beginPath();
+        ctx.moveTo(xx, top);
+        ctx.lineTo(xx, plotBottom);
+        ctx.stroke();
+      }
+
       ctx.save();
       ctx.beginPath();
       ctx.rect(
         left,
         top,
-        plotWidth,
+        plotRight - left,
         plotHeight
       );
       ctx.clip();
 
-      // Horizontal grid.
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = colors.grid;
-      ctx.setLineDash([3, 7]);
+      // Candles
+      rows.forEach((c, i) => {
+        const xx = x(i);
+        const up = c.close >= c.open;
+        const color = up
+          ? "#13bf70"
+          : "#e84c43";
 
-      for (let i = 0; i <= 6; i++) {
-        const y =
-          top + (plotHeight * i) / 6;
-
-        ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(plotRight, y);
-        ctx.stroke();
-      }
-
-      // Vertical grid.
-      const verticalEvery = Math.max(
-        1,
-        Math.ceil(100 / candleGap)
-      );
-
-      for (
-        let i = rows.length - 1;
-        i >= 0;
-        i -= verticalEvery
-      ) {
-        const x = xAt(i);
-
-        if (x < left || x > plotRight) continue;
-
-        ctx.beginPath();
-        ctx.moveTo(x, top);
-        ctx.lineTo(x, plotBottom);
-        ctx.stroke();
-      }
-
-      ctx.setLineDash([]);
-
-      // Candles.
-      const candleWidth = Math.max(
-        2.5,
-        Math.min(11, candleGap * 0.55)
-      );
-
-      rows.forEach((c, index) => {
-        const x = xAt(index);
-
-        if (
-          x < left - candleGap ||
-          x > plotRight + candleGap
-        ) {
-          return;
-        }
-
-        const color =
-          c.close >= c.open
-            ? colors.green
-            : colors.red;
-
-        const openY = yAt(c.open);
-        const closeY = yAt(c.close);
-        const highY = yAt(c.high);
-        const lowY = yAt(c.low);
+        const candleWidth = Math.max(
+          3,
+          Math.min(10, spacing * 0.67)
+        );
 
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2;
+        ctx.fillStyle = color;
+        ctx.lineWidth = 1;
 
-        // Wick
         ctx.beginPath();
-        ctx.moveTo(x, highY);
-        ctx.lineTo(x, lowY);
+        ctx.moveTo(xx, y(c.high));
+        ctx.lineTo(xx, y(c.low));
         ctx.stroke();
 
-        // Body
-        ctx.fillStyle = color;
+        const openY = y(c.open);
+        const closeY = y(c.close);
+
         ctx.fillRect(
-          x - candleWidth / 2,
+          xx - candleWidth / 2,
           Math.min(openY, closeY),
           candleWidth,
           Math.max(
@@ -575,457 +599,252 @@ function LiveTradingChart({
         );
       });
 
-      // Trade entry lines.
-      activeTrades.forEach(trade => {
-        if (
-          trade.entryPrice === null ||
-          trade.entryPrice === undefined
-        ) {
-          return;
-        }
+      // Entry price lines
+      for (const t of trades) {
+        const entry = Number(t.entryPrice);
 
-        const entry = Number(trade.entryPrice);
-        if (!Number.isFinite(entry)) return;
+        if (!Number.isFinite(entry)) continue;
 
-        const y = yAt(entry);
-
-        if (y < top || y > plotBottom) return;
-
+        const yy = y(entry);
         const color =
-          trade.direction === "buy"
-            ? colors.green
-            : colors.red;
+          t.direction === "buy"
+            ? COLOR.green
+            : COLOR.red;
 
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([7, 5]);
+        ctx.setLineDash([5, 5]);
 
         ctx.beginPath();
-        ctx.moveTo(left, y);
-        ctx.lineTo(plotRight, y);
+        ctx.moveTo(left, yy);
+        ctx.lineTo(plotRight, yy);
         ctx.stroke();
 
         ctx.setLineDash([]);
+      }
 
-        ctx.fillStyle = color;
-        ctx.font = "bold 11px Arial";
-        ctx.textAlign = "left";
+      // Current price dotted line
+      const priceY = y(livePrice);
 
-        const amount = Number(
-          trade.amountUSD || 0
-        ).toFixed(2);
-
-        ctx.fillText(
-          `${trade.direction.toUpperCase()} $${amount}`,
-          left + 8,
-          Math.max(top + 12, y - 8)
-        );
-      });
-
-      // Current price line.
-      const markerY = yAt(markerPrice);
-
-      const markerColor =
-        markerPrice >= last.open
-          ? colors.green
-          : colors.red;
-
-      ctx.strokeStyle = markerColor;
-      ctx.lineWidth = 1.1;
-      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "#e0e2eb";
+      ctx.setLineDash([4, 4]);
 
       ctx.beginPath();
-      ctx.moveTo(left, markerY);
-      ctx.lineTo(plotRight, markerY);
+      ctx.moveTo(left, priceY);
+      ctx.lineTo(plotRight, priceY);
       ctx.stroke();
 
       ctx.setLineDash([]);
-
-      // Crosshair.
-      const crosshair = crosshairRef.current;
-
-      if (crosshair) {
-        const cx = Math.max(
-          left,
-          Math.min(plotRight, crosshair.x)
-        );
-
-        const cy = Math.max(
-          top,
-          Math.min(plotBottom, crosshair.y)
-        );
-
-        ctx.strokeStyle = colors.crosshair;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 5]);
-
-        ctx.beginPath();
-        ctx.moveTo(cx, top);
-        ctx.lineTo(cx, plotBottom);
-        ctx.moveTo(left, cy);
-        ctx.lineTo(plotRight, cy);
-        ctx.stroke();
-
-        ctx.setLineDash([]);
-      }
-
       ctx.restore();
 
-      // Right price axis.
-      ctx.fillStyle = colors.muted;
-      ctx.font = width < 480
-        ? "11px Arial"
-        : "12px Arial";
+      // Price scale
+      ctx.fillStyle = "#c3c8d5";
+      ctx.font = "11px Arial";
       ctx.textAlign = "left";
 
-      for (let i = 0; i <= 6; i++) {
-        const y =
-          top + (plotHeight * i) / 6;
+      for (let i = 0; i <= 5; i++) {
+        const yy =
+          top + (plotHeight * i) / 5;
 
         const value =
-          scaleMax - (scaleRange * i) / 6;
+          high - ((high - low) * i) / 5;
 
         ctx.fillText(
-          priceText(value),
-          plotRight + 7,
-          y + 4
+          fmtPrice(value, pair),
+          plotRight + 5,
+          yy + 4
         );
       }
 
-      // Price marker tag.
-      const labelY = Math.max(
-        top + 14,
-        Math.min(plotBottom - 14, markerY)
+      // Price marker
+      const markerY = Math.max(
+        top + 13,
+        Math.min(plotBottom - 13, priceY)
       );
 
-      ctx.fillStyle = markerColor;
+      ctx.fillStyle =
+        livePrice >= latest.open
+          ? COLOR.green
+          : COLOR.red;
+
       ctx.fillRect(
         plotRight,
-        labelY - 14,
+        markerY - 13,
         right,
-        28
+        26
       );
 
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 12px Arial";
-      ctx.textAlign = "left";
-
+      ctx.font = "bold 11px Arial";
       ctx.fillText(
-        priceText(markerPrice),
-        plotRight + 6,
-        labelY + 4
+        fmtPrice(livePrice, pair),
+        plotRight + 5,
+        markerY + 4
       );
 
-      // Time axis.
-      ctx.fillStyle = colors.muted;
-      ctx.font = "11px Arial";
+      // Time labels
+      ctx.fillStyle = "#a7acba";
       ctx.textAlign = "center";
+      ctx.font = "10px Arial";
 
-      const timeStep = Math.max(
+      const labelStep = Math.max(
         1,
-        Math.ceil(85 / candleGap)
+        Math.ceil(75 / spacing)
       );
 
       for (
         let i = rows.length - 1;
         i >= 0;
-        i -= timeStep
+        i -= labelStep
       ) {
-        const x = xAt(i);
+        const xx = x(i);
 
         if (
-          x < left + 25 ||
-          x > plotRight - 25
+          xx < 25 ||
+          xx > plotRight - 20
         ) {
           continue;
         }
 
         ctx.fillText(
-          timeText(rows[i].time),
-          x,
-          height - 12
+          new Date(rows[i].time)
+            .toLocaleTimeString("en-GB", {
+              timeZone: "Asia/Kolkata",
+              hour: "2-digit",
+              minute: "2-digit"
+            }),
+          xx,
+          height - 8
         );
       }
 
-      // Crosshair price label.
-      if (crosshair) {
-        const cy = Math.max(
-          top,
-          Math.min(plotBottom, crosshair.y)
-        );
-
-        const hoveredPrice =
-          scaleMax -
-          ((cy - top) / plotHeight) *
-            scaleRange;
-
-        ctx.fillStyle = "#34445b";
-        ctx.fillRect(
-          plotRight,
-          cy - 12,
-          right,
-          24
-        );
-
-        ctx.fillStyle = "#fff";
-        ctx.font = "11px Arial";
-        ctx.textAlign = "left";
-
-        ctx.fillText(
-          priceText(hoveredPrice),
-          plotRight + 6,
-          cy + 4
-        );
-      }
-
-      // History mode indicator.
-      if (!isLiveView) {
-        ctx.fillStyle = "rgba(17,28,43,0.9)";
-        ctx.fillRect(left + 8, top + 8, 100, 25);
-
-        ctx.fillStyle = colors.muted;
-        ctx.font = "bold 11px Arial";
-        ctx.textAlign = "left";
-        ctx.fillText(
-          "HISTORY VIEW",
-          left + 17,
-          top + 25
-        );
-      }
-
-      animationFrame = requestAnimationFrame(draw);
+      frame = requestAnimationFrame(draw);
     };
 
-    animationFrame = requestAnimationFrame(draw);
+    frame = requestAnimationFrame(draw);
 
     return () => {
-      active = false;
-      cancelAnimationFrame(animationFrame);
+      running = false;
+      cancelAnimationFrame(frame);
     };
-  }, [size, symbol, priceDecimals]);
-
-  const latest = validCandles.at(-1);
-
-  const toolbarButton = {
-    border: `1px solid ${colors.border}`,
-    background: colors.panel,
-    color: colors.text,
-    borderRadius: 8,
-    padding: "8px 12px",
-    fontWeight: 700,
-    fontSize: 12,
-    cursor: "pointer"
-  };
+  }, [dimensions]);
 
   return (
-    <div
-      style={{
-        width: "100%",
-        minWidth: 0,
-        background: colors.background,
-        border: `1px solid ${colors.border}`,
-        borderRadius: 12,
-        overflow: "hidden"
-      }}
-    >
-      {/* Chart toolbar */}
-      <div
-        style={{
-          padding: "12px 14px",
-          borderBottom: `1px solid ${colors.border}`,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          flexWrap: "wrap",
-          gap: 12
-        }}
-      >
-        <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              flexWrap: "wrap"
-            }}
-          >
-            <strong
-              style={{
-                fontSize: 19,
-                color: colors.text
-              }}
-            >
-              {symbol}
-            </strong>
-
-            <span
-              style={{
-                fontSize: 11,
-                color: colors.muted
-              }}
-            >
-              5s · Simulated candles
-            </span>
-          </div>
-
-          {latest && (
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 12,
-                marginTop: 7,
-                fontSize: 11,
-                color: colors.muted
-              }}
-            >
-              <span>
-                O {latest.open.toFixed(priceDecimals)}
-              </span>
-              <span>
-                H {latest.high.toFixed(priceDecimals)}
-              </span>
-              <span>
-                L {latest.low.toFixed(priceDecimals)}
-              </span>
-              <span>
-                C {latest.close.toFixed(priceDecimals)}
-              </span>
-            </div>
-          )}
+    <div className="qx-chart-card">
+      <div className="qx-chart-toolbar">
+        <div className="qx-chart-pair">
+          <span className="qx-pair-dot">●</span>
+          <strong>{symbol}</strong>
+          <span className="qx-pair-feed">
+            {connected ? "LIVE FEED" : "WAITING"}
+          </span>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 7,
-            flexWrap: "wrap",
-            alignItems: "center"
-          }}
-        >
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: connected
-                ? colors.green
-                : "#eab85a"
-            }}
+        <div className="qx-chart-actions">
+          <IconButton
+            title="Previous chart"
+            onClick={() => scroll(12)}
           >
-            ● {connected ? "LIVE FEED" : "CONNECTING"}
-          </span>
+            <ChevronLeft size={16} />
+          </IconButton>
 
-          <button
-            type="button"
-            onClick={() => scrollChart(15)}
-            style={toolbarButton}
-            title="Previous candles"
+          <IconButton
+            title="Next chart"
+            onClick={() => scroll(-12)}
           >
-            ←
-          </button>
+            <ChevronRight size={16} />
+          </IconButton>
 
-          <button
-            type="button"
-            onClick={() => scrollChart(-15)}
-            style={toolbarButton}
-            title="Newer candles"
-          >
-            →
-          </button>
-
-          <button
-            type="button"
-            onClick={zoomOut}
-            style={toolbarButton}
+          <IconButton
             title="Zoom out"
+            onClick={() => zoom(-2)}
           >
-            −
-          </button>
+            <Minus size={15} />
+          </IconButton>
 
-          <button
-            type="button"
-            onClick={zoomIn}
-            style={toolbarButton}
+          <IconButton
             title="Zoom in"
+            onClick={() => zoom(2)}
           >
-            +
-          </button>
+            <Plus size={15} />
+          </IconButton>
 
-          <button
-            type="button"
-            onClick={goLive}
-            style={{
-              ...toolbarButton,
-              background: colors.blue
-            }}
+          <IconButton
+            title="More"
+            onClick={() =>
+              setShowMenu(value => !value)
+            }
           >
-            ↪ Live
-          </button>
-
-          <button
-            type="button"
-            onClick={resetChart}
-            style={toolbarButton}
-          >
-            Reset
-          </button>
+            <MoreHorizontal size={16} />
+          </IconButton>
         </div>
       </div>
 
-      {/* Interactive chart */}
+      {showMenu && (
+        <div className="qx-chart-menu">
+          <button
+            type="button"
+            onClick={() => {
+              setOffset(0);
+              setShowMenu(false);
+            }}
+          >
+            Back to live
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setGap(13);
+              setOffset(0);
+              setShowMenu(false);
+            }}
+          >
+            Reset zoom
+          </button>
+        </div>
+      )}
+
       <div
-        ref={containerRef}
-        style={{
-          width: "100%",
-          height: "clamp(420px, 65vh, 680px)",
-          position: "relative",
-          overflow: "hidden"
-        }}
+        ref={holderRef}
+        className="qx-chart-viewport"
       >
         <canvas
           ref={canvasRef}
+          className="qx-chart-canvas"
           onPointerDown={event => {
             event.currentTarget.setPointerCapture(
               event.pointerId
             );
 
-            dragRef.current = {
+            pointerRef.current = {
               x: event.clientX,
-              startOffset: scrollRef.current
+              offset: safeOffset
             };
           }}
           onPointerMove={event => {
-            const rect =
-              event.currentTarget.getBoundingClientRect();
+            if (!pointerRef.current) return;
 
-            if (dragRef.current) {
-              const distance =
-                event.clientX - dragRef.current.x;
+            const delta =
+              event.clientX -
+              pointerRef.current.x;
 
-              const movedCandles = Math.round(
-                distance / spacingRef.current
-              );
+            const steps = Math.round(
+              delta / gap
+            );
 
-              setScrollOffset(
-                Math.max(
-                  0,
-                  Math.min(
-                    maxScroll,
-                    dragRef.current.startOffset +
-                      movedCandles
-                  )
+            setOffset(
+              Math.max(
+                0,
+                Math.min(
+                  maxOffset,
+                  pointerRef.current.offset + steps
                 )
-              );
-
-              crosshairRef.current = null;
-            } else {
-              crosshairRef.current = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-              };
-            }
+              )
+            );
           }}
           onPointerUp={event => {
+            pointerRef.current = null;
+
             if (
               event.currentTarget.hasPointerCapture(
                 event.pointerId
@@ -1035,890 +854,1783 @@ function LiveTradingChart({
                 event.pointerId
               );
             }
-
-            dragRef.current = null;
           }}
           onPointerCancel={() => {
-            dragRef.current = null;
-          }}
-          onPointerLeave={() => {
-            if (!dragRef.current) {
-              crosshairRef.current = null;
-            }
+            pointerRef.current = null;
           }}
           onWheel={event => {
             event.preventDefault();
 
             if (event.shiftKey) {
-              scrollChart(
-                event.deltaY > 0 ? 4 : -4
+              scroll(
+                event.deltaY > 0 ? 5 : -5
               );
             } else {
-              setSpacing(v =>
-                Math.max(
-                  5,
-                  Math.min(
-                    32,
-                    v + (event.deltaY < 0 ? 2 : -2)
-                  )
-                )
+              zoom(
+                event.deltaY > 0 ? -2 : 2
               );
-
-              scaleRef.current = null;
             }
           }}
-          style={{
-            display: "block",
-            width: "100%",
-            height: "100%",
-            cursor: "grab",
-            touchAction: "none"
-          }}
         />
-      </div>
 
-      {/* Footer */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 10,
-          padding: "10px 14px",
-          borderTop: `1px solid ${colors.border}`,
-          color: colors.muted,
-          fontSize: 11
-        }}
-      >
-        <span>5-second OHLC candles</span>
-        <span>Drag / Swipe to scroll · Wheel to zoom</span>
-        <span>Asia/Kolkata · Simulated</span>
+        {safeOffset > 0 && (
+          <button
+            type="button"
+            className="qx-back-live"
+            onClick={() => setOffset(0)}
+          >
+            <RefreshCw size={13} />
+            Live
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-const POINT_SIZE = { "EUR/USD": 0.001, "GBP/USD": 0.001, "BTC/USD": 1 };
+/* =========================================================
+   TRADES TABLE
+========================================================= */
 
-function estimateTrade(trade, currentPrice) {
-  if (trade.status !== "open" || !Number.isFinite(Number(currentPrice)) || currentPrice === null) return null;
-  const pointSize = Number(trade.pointSize) > 0
-    ? Number(trade.pointSize) : POINT_SIZE[trade.symbol];
-  if (!pointSize) return null;
-  const signedPoints = (Number(currentPrice) - Number(trade.entryPrice)) / pointSize;
-  const directionalPoints = signedPoints * (trade.direction === "buy" ? 1 : -1);
-  const multiplier = directionalPoints > 0 ? Math.min(10, directionalPoints / 100) : directionalPoints === 0 ? 1 : 0;
-  const gross = Math.round(Number(trade.amountUSD) * multiplier * 100) / 100;
-  return { points: directionalPoints, multiplier, profit: Math.round((gross - Number(trade.amountUSD)) * 100) / 100 };
-}
+function TradesTable({
+  trades,
+  prices,
+  onClose,
+  closingId
+}) {
+  if (!trades.length) {
+    return (
+      <div className="qx-empty">
+        No trades available
+      </div>
+    );
+  }
 
-function TradeTable({ trades, now, prices = {}, onClose, closingId }) {
-  if (!trades.length) return <p style={{ color: C.muted }}>No trades yet.</p>;
-  const th = { padding: 12, borderBottom: `1px solid ${C.border}`, color: C.muted, whiteSpace: "nowrap" };
-  const td = { padding: 12, whiteSpace: "nowrap", borderBottom: `1px solid ${C.grid}` };
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", minWidth: 940, borderCollapse: "collapse", textAlign: "left", fontSize: 13 }}>
-        <thead><tr>{["Asset", "Side", "Amount", "Entry", "Current / Exit", "Points", "Multiplier", "Net P/L", "Status", "Action"].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
-        <tbody>{trades.map(t => {
-          const isOpen = t.status === "open";
-          const current = prices[t.symbol];
-          const estimate = estimateTrade(t, current);
-          const net = isOpen ? estimate?.profit : Number(t.profitUSD || 0);
-          const points = isOpen ? estimate?.points : (Number.isFinite(Number(t.signedPoints)) && t.signedPoints != null ? Number(t.signedPoints) * (t.direction === "buy" ? 1 : -1) : null);
-          const multiplier = isOpen ? estimate?.multiplier : t.demoMultiplier;
-          const fixedDuration = isOpen && Boolean(t.expiresAt);
-          const remaining = fixedDuration ? Math.max(0, Math.ceil((new Date(t.expiresAt).getTime() - now) / 1000)) : null;
-          return <tr key={t._id}>
-            <td style={td}>{t.symbol}</td>
-            <td style={{ ...td, color: t.direction === "buy" ? C.green : C.red, fontWeight: 800 }}>{t.direction.toUpperCase()}</td>
-            <td style={td}>${fmt(t.amountUSD)}</td>
-            <td style={td}>{Number(t.entryPrice).toFixed(decimals(t.symbol))}</td>
-            <td style={td}>{(isOpen ? current : t.exitPrice) == null ? "—" : Number(isOpen ? current : t.exitPrice).toFixed(decimals(t.symbol))}</td>
-            <td style={td}>{points == null ? "—" : `${points >= 0 ? "+" : ""}${points.toFixed(2)}`}</td>
-            <td style={td}>{multiplier == null ? "—" : `${Number(multiplier).toFixed(2)}×`}</td>
-            <td style={{ ...td, color: net == null ? C.muted : net > 0 ? C.green : net < 0 ? C.red : C.muted, fontWeight: 800 }}>
-              {net == null ? "—" : `${net > 0 ? "+" : net < 0 ? "−" : ""}$${fmt(Math.abs(net))}`}{isOpen ? " est." : ""}
-            </td>
-            <td style={td}>{isOpen ? (fixedDuration ? `OPEN · ${remaining}s` : "OPEN · Manual") : t.status.toUpperCase()}</td>
-            <td style={td}>{isOpen && !fixedDuration && onClose ? <button type="button" disabled={Boolean(closingId) || current == null} onClick={() => onClose(t._id)} style={{ ...buttonStyle, background: C.blue, opacity: closingId || current == null ? .5 : 1, padding: "9px 16px" }}>{closingId === t._id ? "Closing..." : "EXIT"}</button> : "—"}</td>
-          </tr>;
-        })}</tbody>
+    <div className="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Pair</th>
+            <th>Direction</th>
+            <th>Amount</th>
+            <th>Entry</th>
+            <th>Exit / Current</th>
+            <th>Profit</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {trades.map(t => {
+            const open = t.status === "open";
+
+            return (
+              <tr key={t._id}>
+                <td>{t.symbol}</td>
+
+                <td
+                  style={{
+                    color:
+                      t.direction === "buy"
+                        ? COLOR.green
+                        : COLOR.red,
+                    fontWeight: 700
+                  }}
+                >
+                  {String(
+                    t.direction
+                  ).toUpperCase()}
+                </td>
+
+                <td>${fmtMoney(t.amountUSD)}</td>
+
+                <td>
+                  {fmtPrice(
+                    t.entryPrice,
+                    t.symbol
+                  )}
+                </td>
+
+                <td>
+                  {fmtPrice(
+                    open
+                      ? prices[t.symbol]
+                      : t.exitPrice,
+                    t.symbol
+                  )}
+                </td>
+
+                <td>
+                  {open
+                    ? "—"
+                    : `$${fmtMoney(t.profitUSD)}`}
+                </td>
+
+                <td>{t.status}</td>
+
+                <td>
+                  {open && !t.expiresAt ? (
+                    <button
+                      type="button"
+                      className="qx-exit-button"
+                      disabled={Boolean(closingId)}
+                      onClick={() => onClose(t._id)}
+                    >
+                      {closingId === t._id
+                        ? "Closing..."
+                        : "EXIT"}
+                    </button>
+                  ) : (
+                    "—"
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
       </table>
-      <p style={{ color: C.muted, fontSize: 11, padding: "0 12px" }}>Live P/L is an estimate from the latest simulated price. Final result is calculated by the server on EXIT.</p>
     </div>
   );
 }
+
+/* =========================================================
+   MAIN APPLICATION
+========================================================= */
 
 function App() {
   const [user, setUser] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(
+    Boolean(token())
+  );
+
   const [overview, setOverview] = useState(null);
-  const [authMode, setAuthMode] = useState("login");
-  const [authForm, setAuthForm] = useState({
-    email: "",
-    password: "",
-    name: "",
-    country: "India"
-  });
   const [page, setPage] = useState("Trading");
   const [symbol, setSymbol] = useState("EUR/USD");
   const [amount, setAmount] = useState("10");
+
   const [candles, setCandles] = useState([]);
-  const [price, setPrice] = useState(null);
+  const [currentPrice, setCurrentPrice] = useState(null);
+  const [prices, setPrices] = useState({});
   const [connected, setConnected] = useState(false);
-  const [now, setNow] = useState(Date.now());
+
   const [busy, setBusy] = useState(false);
   const [closingId, setClosingId] = useState(null);
-  const [prices, setPrices] = useState({});
-  const [message, setMessage] = useState("");
-  const [depositForm, setDepositForm] = useState({
+  const [notice, setNotice] = useState("");
+  const [showOffer, setShowOffer] = useState(true);
+  const [showNotifications, setShowNotifications] =
+    useState(false);
+
+  const [deposit, setDeposit] = useState({
     amountUSD: "100",
     method: "UPI",
     reference: ""
   });
-  const [ticketForm, setTicketForm] = useState({
+
+  const [ticket, setTicket] = useState({
     subject: "",
     message: ""
   });
-  const refresh = useCallback(async () => {
-    const data = await api("/me/overview");
+
+  const refreshOverview = useCallback(async () => {
+    const data = await request("/me/overview");
+
     setOverview(data);
-    setUser(data.user);
+
+    if (data.user) {
+      setUser(data.user);
+    }
   }, []);
+
+  // Restore login
   useEffect(() => {
-    if (!token()) return;
-    api("/auth/me")
-      .then(data => setUser(data.user))
+    if (!token()) {
+      setCheckingAuth(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    request("/auth/me")
+      .then(data => {
+        if (!cancelled) {
+          setUser(data.user);
+        }
+      })
       .catch(() => {
-        sessionStorage.removeItem("qx_token");
+        sessionStorage.removeItem(TOKEN_KEY);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setCheckingAuth(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  // Overview polling
   useEffect(() => {
     if (!user) return;
+
     let stopped = false;
-    let loading = false;
+    let running = false;
+
     const poll = async () => {
-      if (stopped || loading) return;
-      loading = true;
+      if (stopped || running) return;
+      running = true;
+
       try {
-        await refresh();
+        const data = await request(
+          "/me/overview"
+        );
+
+        if (!stopped) {
+          setOverview(data);
+
+          if (data.user) {
+            setUser(data.user);
+          }
+        }
       } catch (error) {
         console.error(error);
       } finally {
-        loading = false;
+        running = false;
       }
     };
+
     poll();
-    const id = setInterval(poll, 3000);
+
+    const timer = setInterval(
+      poll,
+      3000
+    );
+
     return () => {
       stopped = true;
-      clearInterval(id);
+      clearInterval(timer);
     };
-  }, [Boolean(user), refresh]);
-  useEffect(() => {
-    if (!user) return;
-    let stopped = false;
-    let loading = false;
-    setCandles([]);
-    setPrice(null);
-    setConnected(false);
-    const poll = async () => {
-      if (stopped || loading) return;
-      loading = true;
-      try {
-        const data = await api(
-          "/trading/chart?symbol=" +
-          encodeURIComponent(symbol)
-        );
-        if (stopped) return;
-        if (!Array.isArray(data.candles)) {
-          throw Error("Invalid chart data");
-        }
-        setCandles(data.candles);
-        setPrice(data.currentPrice);
-      setPrices(prev => ({ ...prev, [symbol]: data.currentPrice }));
-setConnected(
-  data.marketOpen === true ||
-  (
-    data.marketOpen === undefined &&
-    data.currentPrice !== null &&
-    data.currentPrice !== undefined &&
-    Number.isFinite(Number(data.currentPrice)) &&
-    data.candles.length > 0
-  )
-);      } catch (error) {
-        if (!stopped) {
-          setConnected(false);
-          console.error("Chart error:", error);
-        }
-      } finally {
-        loading = false;
-      }
-    };
-    poll();
-    const id = setInterval(poll, 1000);
-    return () => {
-      stopped = true;
-      clearInterval(id);
-    };
-  }, [Boolean(user), symbol]);
-  useEffect(() => {
-    if (!user) return;
-    let stopped = false;
-    const poll = async () => {
-      try {
-        const result = await api("/trading/prices");
-        if (!stopped && result.prices) setPrices(result.prices);
-      } catch (error) { console.error("Price refresh:", error); }
-    };
-    poll();
-    const id = setInterval(poll, 2000);
-    return () => { stopped = true; clearInterval(id); };
   }, [Boolean(user)]);
 
+  // Chart polling
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(id);
-  }, []);
-  async function submitAuth(e) {
-    e.preventDefault();
-    setBusy(true);
-    setMessage("");
-    try {
-      const body = authMode === "register"
-        ? authForm
-        : {
-            email: authForm.email,
-            password: authForm.password
-          };
-      const data = await api(
-        "/auth/" + authMode,
-        "POST",
-        body
-      );
-      sessionStorage.setItem("qx_token", data.token);
-      setUser(data.user);
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    if (!user) return;
+
+    let stopped = false;
+    let running = false;
+
+    setCandles([]);
+    setCurrentPrice(null);
+    setConnected(false);
+
+    const poll = async () => {
+      if (stopped || running) return;
+      running = true;
+
+      try {
+        const data = await request(
+          "/trading/chart?symbol=" +
+            encodeURIComponent(symbol)
+        );
+
+        if (stopped) return;
+
+        const list = Array.isArray(data.candles)
+          ? data.candles
+          : [];
+
+        setCandles(list);
+
+        const valid =
+          data.currentPrice != null &&
+          Number.isFinite(
+            Number(data.currentPrice)
+          );
+
+        const nextPrice = valid
+          ? Number(data.currentPrice)
+          : null;
+
+        setCurrentPrice(nextPrice);
+
+        setPrices(previous => ({
+          ...previous,
+          [symbol]: nextPrice
+        }));
+
+        setConnected(
+          valid &&
+          list.some(c =>
+            c &&
+            c.close != null &&
+            Number.isFinite(
+              Number(c.close)
+            )
+          )
+        );
+      } catch (error) {
+        if (!stopped) {
+          setConnected(false);
+          console.error(error);
+        }
+      } finally {
+        running = false;
+      }
+    };
+
+    poll();
+
+    const timer = setInterval(
+      poll,
+      1000
+    );
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [Boolean(user), symbol]);
+
+  // Price polling
+  useEffect(() => {
+    if (!user) return;
+
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const data = await request(
+          "/trading/prices"
+        );
+
+        if (
+          !stopped &&
+          data.prices &&
+          typeof data.prices === "object"
+        ) {
+          setPrices(data.prices);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    poll();
+
+    const timer = setInterval(
+      poll,
+      2000
+    );
+
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [Boolean(user)]);
+
   async function place(direction) {
-    const investment = Number(amount);
+    const value = Number(amount);
+
     if (
-      !Number.isFinite(investment) ||
-      investment < 1 ||
-      investment > 1000 ||
+      !Number.isFinite(value) ||
+      value < 1 ||
+      value > 1000 ||
       Math.abs(
-        investment * 100 - Math.round(investment * 100)
+        value * 100 -
+          Math.round(value * 100)
       ) > 1e-7
     ) {
-      setMessage("Investment must be $1–$1000.");
+      setNotice(
+        "Investment must be between $1 and $1000."
+      );
       return;
     }
-    setBusy(true);
-    setMessage("");
-    try {
-      await api("/trading/place", "POST", {
-        symbol,
-        direction,
-        amountUSD: investment
-      });
-      setMessage(
-        `${direction.toUpperCase()} demo trade opened. Close it anytime with EXIT.`
+
+    if (!connected) {
+      setNotice(
+        "Price feed is not ready."
       );
-      await refresh();
+      return;
+    }
+
+    setBusy(true);
+    setNotice("");
+
+    try {
+      await request(
+        "/trading/place",
+        "POST",
+        {
+          symbol,
+          direction,
+          amountUSD: value
+        }
+      );
+
+      setNotice(
+        `${direction.toUpperCase()} trade placed.`
+      );
+
+      await refreshOverview();
     } catch (error) {
-      setMessage(error.message);
+      setNotice(error.message);
     } finally {
       setBusy(false);
     }
   }
-  async function closeTrade(tradeId) {
-    if (closingId) return;
-    setClosingId(tradeId);
-    setMessage("");
+
+  async function closeTrade(id) {
+    setClosingId(id);
+    setNotice("");
+
     try {
-      const result = await api(`/trading/${tradeId}/close`, "POST");
-      setMessage(`Trade closed. Net P/L: ${result.trade.profitUSD >= 0 ? "+" : ""}$${fmt(result.trade.profitUSD)}`);
-      await refresh();
+      await request(
+        `/trading/${id}/close`,
+        "POST"
+      );
+
+      setNotice("Trade closed.");
+      await refreshOverview();
     } catch (error) {
-      setMessage(error.message || "Could not close trade");
+      setNotice(error.message);
     } finally {
       setClosingId(null);
     }
   }
 
-  async function submitDeposit(e) {
-    e.preventDefault();
+  async function submitDeposit(event) {
+    event.preventDefault();
     setBusy(true);
-    setMessage("");
+    setNotice("");
+
     try {
-      await api("/me/deposits", "POST", {
-        amountUSD: Number(depositForm.amountUSD),
-        method: depositForm.method,
-        reference: depositForm.reference
+      await request(
+        "/me/deposits",
+        "POST",
+        {
+          amountUSD: Number(
+            deposit.amountUSD
+          ),
+          method: deposit.method,
+          reference: deposit.reference
+        }
+      );
+
+      setNotice(
+        "Deposit request submitted."
+      );
+
+      await refreshOverview();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitTicket(event) {
+    event.preventDefault();
+    setBusy(true);
+    setNotice("");
+
+    try {
+      await request(
+        "/me/tickets",
+        "POST",
+        ticket
+      );
+
+      setTicket({
+        subject: "",
+        message: ""
       });
-      setMessage("Deposit request submitted.");
-      await refresh();
+
+      setNotice(
+        "Support ticket created."
+      );
+
+      await refreshOverview();
     } catch (error) {
-      setMessage(error.message);
+      setNotice(error.message);
     } finally {
       setBusy(false);
     }
   }
-  async function submitTicket(e) {
-    e.preventDefault();
-    setBusy(true);
-    setMessage("");
-    try {
-      await api("/me/tickets", "POST", ticketForm);
-      setTicketForm({ subject: "", message: "" });
-      setMessage("Support ticket submitted.");
-      await refresh();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+
   function logout() {
-    sessionStorage.removeItem("qx_token");
+    sessionStorage.removeItem(
+      TOKEN_KEY
+    );
+
     setUser(null);
     setOverview(null);
-    setCandles([]);
-    setMessage("");
+    setPage("Trading");
+    setNotice("");
   }
+
   const trades = overview?.trades || [];
-  const open = trades.filter(t => t.status === "open");
-  const closed = trades.filter(t => t.status !== "open");
-  const currentOpen = open.filter(t => t.symbol === symbol);
-  if (!user) {
+
+  const openTrades = trades.filter(
+    t => t.status === "open"
+  );
+
+  const closedTrades = trades.filter(
+    t => t.status !== "open"
+  );
+
+  const pairOpenTrades = openTrades.filter(
+    t => t.symbol === symbol
+  );
+
+  const balance = Number(
+    user?.balanceUSD ??
+      user?.demoBalance ??
+      0
+  );
+
+  const navigation = [
+    {
+      name: "Trading",
+      icon: TrendingUp
+    },
+    {
+      name: "Wallet",
+      icon: Wallet
+    },
+    {
+      name: "Support",
+      icon: Headphones
+    },
+    {
+      name: "Account",
+      icon: UserRound
+    }
+  ];
+
+  if (checkingAuth) {
     return (
-      <div style={{
-        minHeight: "100vh",
-        background: C.bg,
-        color: C.text,
-        display: "grid",
-        placeItems: "center",
-        padding: 20,
-        fontFamily: "Inter, Arial, sans-serif"
-      }}>
-        <Panel style={{ width: "100%", maxWidth: 400 }}>
-          <h1 style={{ color: C.blue }}>◈ Quotexx</h1>
-          <p style={{ color: C.muted }}>
-            Independent demo trading simulation
-          </p>
-          <h2>
-            {authMode === "login" ? "Login" : "Register"}
-          </h2>
-          <form onSubmit={submitAuth}>
-            {authMode === "register" && (
-              <>
-                <Field
-                  label="Name"
-                  value={authForm.name}
-                  onChange={e => setAuthForm({
-                    ...authForm,
-                    name: e.target.value
-                  })}
-                />
-                <Field
-                  label="Country"
-                  value={authForm.country}
-                  onChange={e => setAuthForm({
-                    ...authForm,
-                    country: e.target.value
-                  })}
-                />
-              </>
-            )}
-            <Field
-              label="Email"
-              type="email"
-              required
-              value={authForm.email}
-              onChange={e => setAuthForm({
-                ...authForm,
-                email: e.target.value
-              })}
-            />
-            <Field
-              label="Password"
-              type="password"
-              required
-              minLength={authMode === "register" ? 10 : 1}
-              value={authForm.password}
-              onChange={e => setAuthForm({
-                ...authForm,
-                password: e.target.value
-              })}
-            />
-            <button
-              disabled={busy}
-              style={{
-                ...buttonStyle,
-                width: "100%",
-                background: C.blue
-              }}
-            >
-              {authMode === "login" ? "Login" : "Register"}
-            </button>
-          </form>
-          {message && (
-            <p style={{ color: C.red }}>{message}</p>
-          )}
-          <button
-            onClick={() => {
-              setAuthMode(
-                authMode === "login" ? "register" : "login"
-              );
-              setMessage("");
-            }}
-            style={{
-              background: "none",
-              border: 0,
-              color: C.blue,
-              marginTop: 18,
-              cursor: "pointer"
-            }}
-          >
-            {authMode === "login"
-              ? "Create account"
-              : "Already have an account? Login"}
-          </button>
-        </Panel>
+      <div className="qx-loading">
+        Loading Quotexx...
       </div>
     );
   }
+
+  if (!user) {
+    return (
+      <Auth onSuccess={setUser} />
+    );
+  }
+
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: C.bg,
-      color: C.text,
-      fontFamily: "Inter, Arial, sans-serif"
-    }}>
-      <header style={{
-        background: C.panel,
-        borderBottom: `1px solid ${C.border}`,
-        padding: "13px 20px",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: 14
-      }}>
-        <strong style={{ fontSize: 24, color: C.blue }}>
-          ◈ Quotexx
-        </strong>
-        <nav style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 7
-        }}>
-          {["Trading", "Wallet", "Support", "Account"]
-            .map(item => (
-              <button
-                key={item}
-                onClick={() => {
-                  setPage(item);
-                  setMessage("");
-                }}
-                style={{
-                  ...buttonStyle,
-                  background: page === item
-                    ? C.blue
-                    : C.panel2
-                }}
-              >
-                {item}
-              </button>
-            ))}
+    <div className="qx-app">
+      {/* TOP HEADER */}
+      <header className="qx-app-header">
+        <div className="qx-brand">
+          <span style={{ color: COLOR.green }}>
+            ◆
+          </span>
+          {" "}Quotexx
+        </div>
+
+        <nav className="qx-header-nav">
+          {navigation.map(item => (
+            <button
+              key={item.name}
+              type="button"
+              className={
+                page === item.name
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setPage(item.name)
+              }
+            >
+              {item.name}
+            </button>
+          ))}
         </nav>
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 16
-        }}>
-          <div>
-            <small style={{
-              display: "block",
-              color: C.muted
-            }}>
-              Demo Balance
-            </small>
-            <strong style={{
-              fontSize: 19,
-              color: C.green
-            }}>
-              ${fmt(user.demoBalance ?? 10000)}
-            </strong>
-          </div>
+
+        <div className="qx-balance">
+          <span className="qx-balance-live">
+            LIVE
+          </span>
+
+          <span>
+            ${fmtMoney(balance)}
+          </span>
+
+          <ChevronDown size={14} />
+        </div>
+
+        <IconButton
+          title="Notifications"
+          onClick={() =>
+            setShowNotifications(v => !v)
+          }
+        >
+          <Bell size={18} />
+        </IconButton>
+
+        <button
+          type="button"
+          className="qx-deposit-btn"
+          onClick={() =>
+            setPage("Wallet")
+          }
+        >
+          Deposit
+        </button>
+      </header>
+
+      {showNotifications && (
+        <div className="qx-notification-popup">
+          <strong>Notifications</strong>
+
+          <p>No new notifications</p>
+
           <button
-            onClick={logout}
-            style={{
-              ...buttonStyle,
-              background: C.panel2
-            }}
+            type="button"
+            onClick={() =>
+              setShowNotifications(false)
+            }
           >
-            Logout
+            Close
           </button>
         </div>
-      </header>
-      <div style={{
-        background: "#2b2416",
-        color: C.yellow,
-        padding: "8px 12px",
-        textAlign: "center",
-        fontSize: 12
-      }}>
-        DEMO TRADING · Simulated prices ·
-        Not connected to real financial markets
-      </div>
+      )}
+
+      {/* OFFER BANNER */}
+      {page === "Trading" &&
+        showOffer && (
+          <div className="qx-offer">
+            <span>🎁</span>
+
+            <span>
+              50% deposit bonus available
+            </span>
+
+            <strong className="qx-offer-badge">
+              +50%
+            </strong>
+
+            <button
+              type="button"
+              className="qx-offer-close"
+              onClick={() =>
+                setShowOffer(false)
+              }
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+      {/* NOTICE */}
+      {notice && (
+        <div className="qx-notice">
+          <span>{notice}</span>
+
+          <button
+            type="button"
+            onClick={() =>
+              setNotice("")
+            }
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* TRADING */}
       {page === "Trading" && (
-        <main style={{
-          padding: 16,
-          maxWidth: 1800,
-          margin: "auto"
-        }}>
-          <div style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 9,
-            marginBottom: 14
-          }}>
+        <main className="qx-trading-main">
+          {/* DESKTOP PAIR TABS */}
+          <div className="qx-pair-tabs">
             {PAIRS.map(pair => (
               <button
                 key={pair}
-                onClick={() => setSymbol(pair)}
-                style={{
-                  ...buttonStyle,
-                  background: pair === symbol
-                    ? C.blue
-                    : C.panel,
-                  border: `1px solid ${C.border}`,
-                  padding: "12px 22px"
-                }}
+                type="button"
+                className={
+                  symbol === pair
+                    ? "active"
+                    : ""
+                }
+                onClick={() =>
+                  setSymbol(pair)
+                }
               >
                 {pair}
               </button>
             ))}
           </div>
+
           <div className="qx-trading-grid">
-            <div style={{ minWidth: 0 }}>
-              <div style={{color:'#9db4d0',fontSize:12,marginBottom:8}}>Admin-defined scheduled demo prices · Not live market data · Virtual funds only</div>
-              <LiveTradingChart
+            {/* CHART */}
+            <div className="qx-chart-column">
+              <CandleChart
                 symbol={symbol}
                 candles={candles}
-                currentPrice={price}
-                trades={currentOpen}
+                currentPrice={currentPrice}
+                openTrades={pairOpenTrades}
                 connected={connected}
-                now={now}
               />
             </div>
-            <Panel style={{ alignSelf: "start" }}>
-              <h2 style={{ marginTop: 0 }}>
-                Place Demo Trade
-              </h2>
-              <div style={{
-                padding: 15,
-                background: C.panel2,
-                borderRadius: 10,
-                marginBottom: 18
-              }}>
-                <small style={{ color: C.muted }}>
-                  Available Demo Funds
-                </small>
-                <h2 style={{
-                  color: C.green,
-                  margin: "7px 0 0"
-                }}>
-                  ${fmt(user.demoBalance ?? 10000)}
-                </h2>
+
+            {/* COMPACT TRADING PANEL */}
+            <div className="qx-order-panel">
+              <div className="qx-order-header">
+                <div className="qx-mobile-pair-selector">
+                  <select
+                    value={symbol}
+                    onChange={event =>
+                      setSymbol(
+                        event.target.value
+                      )
+                    }
+                  >
+                    {PAIRS.map(pair => (
+                      <option
+                        key={pair}
+                        value={pair}
+                      >
+                        {pair}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="qx-order-pair-desktop">
+                  <strong>{symbol}</strong>
+
+                  <small>
+                    Simulated trading
+                  </small>
+                </div>
+
+                <span
+                  className={
+                    connected
+                      ? "qx-feed-connected"
+                      : "qx-feed-disconnected"
+                  }
+                >
+                  ●{" "}
+                  {connected
+                    ? "CONNECTED"
+                    : "WAITING"}
+                </span>
               </div>
-              <Field
-                label="Investment ($)"
-                type="number"
-                min="1"
-                max="1000"
-                step="0.01"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-              />
-              <Field
-                label="Trade Mode"
-                readOnly
-                value="Manual EXIT · No fixed expiry"
-              />
-              <div style={{
-                display: "flex",
-                justifyContent: "space-between",
-                color: C.muted,
-                fontSize: 14
-              }}>
-                <span>Demo return formula</span>
-                <strong style={{ color: C.green }}>
-                  Points ÷ 100
+
+              <div className="qx-order-fields">
+                <div className="qx-order-field">
+                  <span>Trade mode</span>
+
+                  <strong>
+                    Manual Exit
+                  </strong>
+                </div>
+
+                <div className="qx-order-field">
+                  <span>Price</span>
+
+                  <strong>
+                    {fmtPrice(
+                      currentPrice,
+                      symbol
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+              <div className="qx-investment">
+                <span className="qx-investment-label">
+                  Investment
+                </span>
+
+                <div className="qx-investment-control">
+                  <IconButton
+                    title="Decrease investment"
+                    onClick={() =>
+                      setAmount(v =>
+                        String(
+                          Math.max(
+                            1,
+                            Number(v || 1) - 1
+                          )
+                        )
+                      )
+                    }
+                  >
+                    <Minus size={16} />
+                  </IconButton>
+
+                  <div className="qx-investment-input">
+                    <span>$</span>
+
+                    <input
+                      type="number"
+                      min="1"
+                      max="1000"
+                      step="0.01"
+                      value={amount}
+                      onChange={event =>
+                        setAmount(
+                          event.target.value
+                        )
+                      }
+                    />
+                  </div>
+
+                  <IconButton
+                    title="Increase investment"
+                    onClick={() =>
+                      setAmount(v =>
+                        String(
+                          Math.min(
+                            1000,
+                            Number(v || 0) + 1
+                          )
+                        )
+                      )
+                    }
+                  >
+                    <Plus size={16} />
+                  </IconButton>
+                </div>
+              </div>
+
+              <div className="qx-profit-row">
+                <span>Profit calculation</span>
+
+                <strong>
+                  Points based
                 </strong>
               </div>
-              <div style={{
-                background: "#102c27",
-                border: "1px solid #205747",
-                borderRadius: 10,
-                padding: 17,
-                margin: "16px 0"
-              }}>
-                <small style={{ color: C.muted }}>
-                  Variable Demo Return
-                </small>
-                <h1 style={{
-                  color: C.green,
-                  margin: "8px 0"
-                }}>
-                  Depends on exit price
-                </h1>
-                <small style={{ color: C.muted }}>
-                  200 points = 2x gross · 300 points = 3x gross · max 10x; losses can be 100%
-                </small>
+
+              <div className="qx-trade-buttons">
+                <button
+                  type="button"
+                  className="qx-buy-btn"
+                  disabled={
+                    busy || !connected
+                  }
+                  onClick={() =>
+                    place("buy")
+                  }
+                >
+                  <ArrowUp size={18} />
+                  <span>BUY</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="qx-sell-btn"
+                  disabled={
+                    busy || !connected
+                  }
+                  onClick={() =>
+                    place("sell")
+                  }
+                >
+                  <ArrowDown size={18} />
+                  <span>SELL</span>
+                </button>
               </div>
-              <button
-                disabled={busy || !connected}
-                onClick={() => place("buy")}
-                style={{
-                  ...buttonStyle,
-                  background: C.green,
-                  width: "100%",
-                  padding: 19,
-                  fontSize: 17,
-                  marginBottom: 12,
-                  opacity: busy || !connected ? 0.5 : 1
-                }}
-              >
-                ↑ BUY / UP
-              </button>
-              <button
-                disabled={busy || !connected}
-                onClick={() => place("sell")}
-                style={{
-                  ...buttonStyle,
-                  background: C.red,
-                  width: "100%",
-                  padding: 19,
-                  fontSize: 17,
-                  opacity: busy || !connected ? 0.5 : 1
-                }}
-              >
-                ↓ SELL / DOWN
-              </button>
-              <p style={{
-                color: C.muted,
-                fontSize: 12,
-                lineHeight: 1.7
-              }}>
-                No fixed duration. Use EXIT in Active Trades to close at the server-calculated demo price.
-              </p>
-            </Panel>
+            </div>
           </div>
-          {message && (
-            <Panel style={{ marginTop: 15 }}>
-              {message}
-            </Panel>
-          )}
-          <Panel style={{ marginTop: 16 }}>
-            <h2>Active Trades ({open.length})</h2>
-            <TradeTable trades={open} now={now} prices={prices} onClose={closeTrade} closingId={closingId} />
-          </Panel>
-          <Panel style={{ marginTop: 16 }}>
+
+          {/* HISTORY BELOW TRADING VIEW */}
+          <section className="qx-section">
+            <h2>
+              Open Trades (
+              {openTrades.length})
+            </h2>
+
+            <TradesTable
+              trades={openTrades}
+              prices={prices}
+              onClose={closeTrade}
+              closingId={closingId}
+            />
+          </section>
+
+          <section className="qx-section">
             <h2>Trade History</h2>
-            <TradeTable trades={closed} now={now} prices={prices} />
-          </Panel>
+
+            <TradesTable
+              trades={closedTrades}
+              prices={prices}
+              closingId={closingId}
+              onClose={closeTrade}
+            />
+          </section>
         </main>
       )}
+
+      {/* WALLET */}
       {page === "Wallet" && (
-        <main style={{
-          maxWidth: 950,
-          margin: "auto",
-          padding: 20
-        }}>
+        <main className="qx-content-page">
           <h2>Wallet</h2>
-          <div className="qx-wallet-grid">
-            <Panel>
-              <p style={{ color: C.muted }}>Demo Balance</p>
-              <h1 style={{ color: C.green }}>
-                ${fmt(user.demoBalance ?? 10000)}
-              </h1>
-            </Panel>
-            <Panel>
-              <p style={{ color: C.muted }}>Deposit Wallet</p>
-              <h1>${fmt(user.balance)}</h1>
-            </Panel>
+
+          <div className="qx-page-card">
+            <span>LIVE Balance</span>
+
+            <h1>
+              ${fmtMoney(balance)}
+            </h1>
           </div>
-          <Panel style={{ marginTop: 18 }}>
-            <h3>Deposit Request</h3>
-            <p style={{ color: C.muted }}>
-              This form records a request only.
-              No payment is collected automatically.
-            </p>
+
+          <div className="qx-page-card">
+            <h3>Deposit</h3>
+
             <form onSubmit={submitDeposit}>
-              <Field
-                label="Amount ($)"
-                type="number"
-                min="10"
-                max="952"
-                required
-                value={depositForm.amountUSD}
-                onChange={e => setDepositForm({
-                  ...depositForm,
-                  amountUSD: e.target.value
-                })}
-              />
-              <label style={{
-                display: "block",
-                marginBottom: 15,
-                color: C.muted
-              }}>
-                Method
+              <label>
+                Amount USD
+                <input
+                  type="number"
+                  min="10"
+                  step="0.01"
+                  required
+                  value={deposit.amountUSD}
+                  onChange={e =>
+                    setDeposit(p => ({
+                      ...p,
+                      amountUSD:
+                        e.target.value
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
+                Payment Method
                 <select
-                  value={depositForm.method}
-                  onChange={e => setDepositForm({
-                    ...depositForm,
-                    method: e.target.value
-                  })}
-                  style={inputStyle}
+                  value={deposit.method}
+                  onChange={e =>
+                    setDeposit(p => ({
+                      ...p,
+                      method:
+                        e.target.value
+                    }))
+                  }
                 >
-                  <option>UPI</option>
-                  <option>PhonePe</option>
-                  <option>PayTM</option>
-                  <option>USDT</option>
+                  <option value="UPI">
+                    UPI
+                  </option>
+                  <option value="PhonePe">
+                    PhonePe
+                  </option>
+                  <option value="Paytm">
+                    Paytm
+                  </option>
                 </select>
               </label>
-              <Field
-                label="Reference"
-                value={depositForm.reference}
-                onChange={e => setDepositForm({
-                  ...depositForm,
-                  reference: e.target.value
-                })}
-              />
+
+              <label>
+                Payment Reference
+                <input
+                  required
+                  value={deposit.reference}
+                  onChange={e =>
+                    setDeposit(p => ({
+                      ...p,
+                      reference:
+                        e.target.value
+                    }))
+                  }
+                />
+              </label>
+
               <button
+                type="submit"
+                className="qx-deposit-btn"
                 disabled={busy}
-                style={{
-                  ...buttonStyle,
-                  background: C.blue
-                }}
               >
-                Submit Request
+                Submit Deposit
               </button>
             </form>
-            {message && <p>{message}</p>}
-          </Panel>
-          <Panel style={{ marginTop: 18 }}>
+          </div>
+
+          <div className="qx-page-card">
             <h3>Deposit History</h3>
-            {(overview?.deposits || []).map(d => (
-              <p key={d._id}>
-                ${fmt(d.amountUSD)} · {d.method} · {d.status}
-              </p>
-            ))}
-          </Panel>
-          <Panel style={{ marginTop: 18 }}>
-            <h3>Withdrawal History</h3>
-            {(overview?.withdrawals || []).map(d => (
-              <p key={d._id}>
-                ${fmt(d.amountUSD)} · {d.method} · {d.status}
-              </p>
-            ))}
-          </Panel>
+
+            <div className="tablewrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {(
+                    overview?.deposits || []
+                  ).map(item => (
+                    <tr key={item._id}>
+                      <td>
+                        $
+                        {fmtMoney(
+                          item.amountUSD
+                        )}
+                      </td>
+                      <td>
+                        {item.method}
+                      </td>
+                      <td>
+                        {item.status}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </main>
       )}
+
+      {/* SUPPORT */}
       {page === "Support" && (
-        <main style={{
-          maxWidth: 850,
-          margin: "auto",
-          padding: 20
-        }}>
-          <Panel>
-            <h2>Support</h2>
+        <main className="qx-content-page">
+          <h2>Support</h2>
+
+          <div className="qx-page-card">
+            <h3>Create Ticket</h3>
+
             <form onSubmit={submitTicket}>
-              <Field
-                label="Subject"
-                required
-                value={ticketForm.subject}
-                onChange={e => setTicketForm({
-                  ...ticketForm,
-                  subject: e.target.value
-                })}
-              />
-              <label style={{ color: C.muted }}>
+              <label>
+                Subject
+                <input
+                  required
+                  value={ticket.subject}
+                  onChange={e =>
+                    setTicket(p => ({
+                      ...p,
+                      subject:
+                        e.target.value
+                    }))
+                  }
+                />
+              </label>
+
+              <label>
                 Message
                 <textarea
                   required
-                  value={ticketForm.message}
-                  onChange={e => setTicketForm({
-                    ...ticketForm,
-                    message: e.target.value
-                  })}
-                  style={{
-                    ...inputStyle,
-                    minHeight: 120,
-                    marginBottom: 15
-                  }}
+                  rows={5}
+                  value={ticket.message}
+                  onChange={e =>
+                    setTicket(p => ({
+                      ...p,
+                      message:
+                        e.target.value
+                    }))
+                  }
                 />
               </label>
+
               <button
+                type="submit"
                 disabled={busy}
-                style={{
-                  ...buttonStyle,
-                  background: C.blue
-                }}
               >
-                Send Ticket
+                Submit Ticket
               </button>
             </form>
-            {message && <p>{message}</p>}
-          </Panel>
-          <Panel style={{ marginTop: 18 }}>
+          </div>
+
+          <div className="qx-page-card">
             <h3>My Tickets</h3>
-            {(overview?.tickets || []).map(t => (
-              <div key={t._id} style={{
-                borderBottom: `1px solid ${C.border}`,
-                padding: "12px 0"
-              }}>
-                <b>{t.subject}</b>
-                <p>{t.message}</p>
-                <small style={{ color: C.muted }}>
-                  {t.status}
+
+            {(
+              overview?.tickets || []
+            ).map(item => (
+              <div
+                className="qx-ticket"
+                key={item._id}
+              >
+                <strong>
+                  {item.subject}
+                </strong>
+
+                <p>
+                  {item.message}
+                </p>
+
+                <small>
+                  {item.status}
                 </small>
-                {t.reply && <p>Reply: {t.reply}</p>}
+
+                {item.reply && (
+                  <p>
+                    Reply: {item.reply}
+                  </p>
+                )}
               </div>
             ))}
-          </Panel>
+          </div>
         </main>
       )}
+
+      {/* ACCOUNT */}
       {page === "Account" && (
-        <main style={{
-          maxWidth: 1100,
-          margin: "auto",
-          padding: 20
-        }}>
-          <Panel>
-            <h2>Account</h2>
-            <p>Email: {user.email}</p>
-            <p>Name: {user.name || "—"}</p>
-            <p>Country: {user.country}</p>
-            <p>Status: {user.status}</p>
-            <p>Demo Balance: ${fmt(user.demoBalance ?? 10000)}</p>
-            <p>Deposit Balance: ${fmt(user.balance)}</p>
-          </Panel>
-          <Panel style={{ marginTop: 18 }}>
-            <h2>All Trades</h2>
-            <TradeTable trades={trades} now={now} prices={prices} onClose={closeTrade} closingId={closingId} />
-          </Panel>
+        <main className="qx-content-page">
+          <h2>Account</h2>
+
+          <div className="qx-page-card">
+            <h3>
+              {user.name || "Trader"}
+            </h3>
+
+            <p>{user.email}</p>
+
+            <p>
+              Balance: $
+              {fmtMoney(balance)}
+            </p>
+
+            <button
+              type="button"
+              onClick={logout}
+              style={{
+                background: COLOR.red
+              }}
+            >
+              <LogOut
+                size={16}
+                style={{
+                  verticalAlign: "middle"
+                }}
+              />
+              {" "}Logout
+            </button>
+          </div>
         </main>
       )}
+
+      {/* MOBILE NAVIGATION */}
+      <div className="qx-mobile-nav">
+        {navigation.map(item => {
+          const Icon = item.icon;
+
+          return (
+            <button
+              key={item.name}
+              type="button"
+              className={
+                page === item.name
+                  ? "active"
+                  : ""
+              }
+              onClick={() =>
+                setPage(item.name)
+              }
+            >
+              <Icon size={20} />
+
+              <span>
+                {item.name}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* COMPONENT-SPECIFIC STYLES */}
+      <style>{`
+        .qx-app {
+          min-height: 100dvh;
+          background: ${COLOR.bg};
+          color: ${COLOR.text};
+        }
+
+        .qx-chart-toolbar {
+          height: 39px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 6px;
+          padding: 4px 9px;
+          background: ${COLOR.bg};
+        }
+
+        .qx-chart-pair {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          min-width: 0;
+          white-space: nowrap;
+        }
+
+        .qx-chart-pair strong {
+          font-size: 13px;
+        }
+
+        .qx-pair-dot {
+          color: ${COLOR.green};
+          font-size: 12px;
+        }
+
+        .qx-pair-feed {
+          font-size: 9px;
+          color: ${COLOR.muted};
+        }
+
+        .qx-chart-actions {
+          display: flex;
+          gap: 3px;
+        }
+
+        .qx-chart-menu {
+          display: flex;
+          gap: 6px;
+          padding: 6px 10px;
+          background: ${COLOR.panel};
+        }
+
+        .qx-chart-menu button {
+          padding: 7px 10px;
+          font-size: 11px;
+        }
+
+        .qx-chart-viewport {
+          position: relative;
+          width: 100%;
+          height: min(72vh, 710px);
+          min-height: 440px;
+          overflow: hidden;
+          background: ${COLOR.bg};
+        }
+
+        .qx-chart-canvas {
+          display: block;
+          width: 100%;
+          height: 100%;
+          touch-action: none;
+          cursor: grab;
+        }
+
+        .qx-back-live {
+          position: absolute;
+          bottom: 34px;
+          right: 82px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          padding: 7px 10px;
+          font-size: 11px;
+          background: ${COLOR.blue};
+        }
+
+        .qx-order-panel {
+          background: ${COLOR.panel};
+          border: 1px solid ${COLOR.border};
+          border-radius: 7px;
+          padding: 14px;
+        }
+
+        .qx-order-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-bottom: 13px;
+        }
+
+        .qx-order-pair-desktop {
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .qx-order-pair-desktop strong {
+          font-size: 16px;
+        }
+
+        .qx-order-pair-desktop small {
+          font-size: 10px;
+          color: ${COLOR.muted};
+        }
+
+        .qx-mobile-pair-selector {
+          display: none;
+        }
+
+        .qx-feed-connected,
+        .qx-feed-disconnected {
+          font-size: 10px;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+
+        .qx-feed-connected {
+          color: ${COLOR.green};
+        }
+
+        .qx-feed-disconnected {
+          color: ${COLOR.red};
+        }
+
+        .qx-order-fields {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 9px;
+        }
+
+        .qx-order-field {
+          display: flex;
+          flex-direction: column;
+          gap: 7px;
+          min-width: 0;
+          padding: 11px;
+          border: 1px solid ${COLOR.border};
+          border-radius: 5px;
+        }
+
+        .qx-order-field span {
+          font-size: 11px;
+          color: ${COLOR.muted};
+        }
+
+        .qx-order-field strong {
+          font-size: 13px;
+          white-space: nowrap;
+        }
+
+        .qx-investment {
+          margin-top: 14px;
+        }
+
+        .qx-investment-label {
+          display: block;
+          font-size: 12px;
+          color: ${COLOR.muted};
+          margin-bottom: 7px;
+        }
+
+        .qx-investment-control {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          border: 1px solid ${COLOR.border};
+          border-radius: 5px;
+          padding: 5px;
+        }
+
+        .qx-investment-input {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 0;
+        }
+
+        .qx-investment-input span {
+          font-size: 17px;
+          font-weight: 800;
+        }
+
+        .qx-investment-input input {
+          width: 75px;
+          min-width: 0;
+          margin: 0;
+          padding: 4px;
+          background: transparent;
+          border: 0;
+          text-align: center;
+          font-size: 17px;
+          font-weight: 800;
+          outline: none;
+        }
+
+        .qx-profit-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 14px 0;
+          font-size: 12px;
+        }
+
+        .qx-profit-row span {
+          color: ${COLOR.muted};
+        }
+
+        .qx-trade-buttons {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+        }
+
+        .qx-buy-btn,
+        .qx-sell-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 7px;
+          min-width: 0;
+          height: 55px;
+          border-radius: 5px;
+          font-size: 16px;
+          font-weight: 800;
+          color: white;
+        }
+
+        .qx-buy-btn {
+          background: ${COLOR.green};
+        }
+
+        .qx-sell-btn {
+          background: ${COLOR.red};
+        }
+
+        .qx-content-page {
+          width: min(1100px, 100%);
+          margin: auto;
+          padding: 20px;
+          padding-bottom: 90px;
+        }
+
+        .qx-page-card {
+          background: ${COLOR.panel};
+          border: 1px solid ${COLOR.border};
+          border-radius: 8px;
+          padding: 18px;
+          margin-bottom: 15px;
+        }
+
+        .qx-ticket {
+          padding: 12px 0;
+          border-bottom: 1px solid ${COLOR.border};
+        }
+
+        .qx-notice {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+          margin: 6px 10px;
+          padding: 9px 12px;
+          background: #35394a;
+          border-left: 3px solid ${COLOR.blue};
+          border-radius: 5px;
+          font-size: 12px;
+        }
+
+        .qx-notice button {
+          background: transparent;
+          padding: 2px;
+        }
+
+        .qx-notification-popup {
+          position: absolute;
+          top: 55px;
+          right: 10px;
+          z-index: 100;
+          width: 220px;
+          background: ${COLOR.panel};
+          border: 1px solid ${COLOR.border};
+          border-radius: 7px;
+          padding: 15px;
+          box-shadow: 0 10px 30px #0008;
+        }
+
+        .qx-notification-popup p {
+          color: ${COLOR.muted};
+          font-size: 12px;
+        }
+
+        .qx-exit-button {
+          background: ${COLOR.blue};
+          padding: 7px 12px;
+          font-size: 11px;
+        }
+
+        .qx-empty {
+          padding: 15px;
+          color: ${COLOR.muted};
+          text-align: center;
+          font-size: 12px;
+        }
+
+        .qx-loading {
+          min-height: 100vh;
+          display: grid;
+          place-items: center;
+          background: ${COLOR.bg};
+          color: white;
+        }
+
+        @media (min-width: 768px) {
+          .qx-mobile-nav {
+            display: none !important;
+          }
+
+          .qx-trading-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 300px;
+            gap: 12px;
+          }
+
+          .qx-order-panel {
+            position: sticky;
+            top: 12px;
+          }
+        }
+
+        @media (max-width: 767px) {
+          .qx-app {
+            padding-bottom: 60px;
+          }
+
+          .qx-app-header {
+            height: 48px !important;
+            min-height: 48px !important;
+            padding: 5px 9px !important;
+            gap: 7px;
+            flex-wrap: nowrap !important;
+          }
+
+          .qx-brand,
+          .qx-header-nav,
+          .qx-pair-tabs {
+            display: none !important;
+          }
+
+          .qx-balance {
+            height: 36px;
+            padding: 6px 10px;
+            font-size: 13px;
+          }
+
+          .qx-deposit-btn {
+            height: 36px;
+            padding: 7px 12px !important;
+            margin-left: auto;
+          }
+
+          .qx-offer {
+            height: 33px;
+            min-height: 33px;
+            margin: 4px 9px 5px;
+            padding: 4px 27px 4px 9px;
+            font-size: 11px;
+          }
+
+          .qx-trading-main {
+            padding: 0 !important;
+          }
+
+          .qx-trading-grid {
+            display: flex !important;
+            flex-direction: column;
+            gap: 0 !important;
+          }
+
+          .qx-chart-column {
+            width: 100%;
+          }
+
+          .qx-chart-card {
+            border: 0 !important;
+            border-radius: 0 !important;
+          }
+
+          .qx-chart-toolbar {
+            height: 35px !important;
+            min-height: 35px !important;
+            padding: 3px 7px !important;
+          }
+
+          .qx-chart-actions button {
+            width: 25px !important;
+            height: 25px !important;
+          }
+
+          .qx-pair-feed {
+            display: none;
+          }
+
+          /*
+            Screen allocation:
+            Header       48px
+            Offer        42px
+            Chart tools  35px
+            Order panel 220px
+            Bottom nav   60px
+
+            Chart receives remaining height.
+          */
+          .qx-chart-viewport {
+            height: max(
+              155px,
+              calc(100dvh - 405px)
+            ) !important;
+            min-height: 155px !important;
+            max-height: none !important;
+          }
+
+          .qx-order-panel {
+            width: 100%;
+            height: 220px;
+            padding: 7px 9px !important;
+            border-radius: 0 !important;
+            border-left: 0 !important;
+            border-right: 0 !important;
+            overflow: hidden;
+          }
+
+          .qx-order-header {
+            height: 30px;
+            margin-bottom: 5px;
+          }
+
+          .qx-mobile-pair-selector {
+            display: block;
+            width: 150px;
+          }
+
+          .qx-mobile-pair-selector select {
+            width: 100%;
+            height: 29px;
+            min-height: 29px;
+            padding: 4px 8px;
+            margin: 0;
+            font-size: 12px;
+            font-weight: 700;
+            border: 1px solid ${COLOR.border};
+            background: ${COLOR.panel2};
+          }
+
+          .qx-order-pair-desktop {
+            display: none;
+          }
+
+          .qx-feed-connected,
+          .qx-feed-disconnected {
+            font-size: 9px;
+          }
+
+          .qx-order-fields {
+            gap: 7px;
+          }
+
+          .qx-order-field {
+            height: 43px;
+            gap: 4px;
+            padding: 5px 8px;
+          }
+
+          .qx-order-field span {
+            font-size: 10px;
+          }
+
+          .qx-order-field strong {
+            font-size: 12px;
+          }
+
+          .qx-investment {
+            margin-top: 5px;
+          }
+
+          .qx-investment-label {
+            font-size: 10px;
+            margin-bottom: 3px;
+          }
+
+          .qx-investment-control {
+            height: 39px;
+            padding: 3px;
+          }
+
+          .qx-investment-control button {
+            width: 30px !important;
+            height: 29px !important;
+          }
+
+          .qx-investment-input input {
+            font-size: 15px;
+            padding: 2px;
+            height: 27px;
+          }
+
+          .qx-profit-row {
+            padding: 6px 0;
+            font-size: 10px;
+          }
+
+          .qx-trade-buttons {
+            gap: 9px;
+          }
+
+          .qx-buy-btn,
+          .qx-sell-btn {
+            height: 48px !important;
+            min-height: 48px !important;
+            padding: 0 8px !important;
+            font-size: 15px !important;
+            border-radius: 5px !important;
+          }
+
+          .qx-mobile-nav {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            height: 60px;
+            display: flex !important;
+            justify-content: space-around;
+            align-items: center;
+            background: ${COLOR.bg};
+            border-top: 1px solid ${COLOR.border};
+          }
+
+          .qx-mobile-nav button {
+            flex: 1;
+            height: 52px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            background: transparent;
+            border-radius: 0;
+            color: #969bad;
+            font-size: 10px;
+            padding: 4px;
+          }
+
+          .qx-mobile-nav button.active {
+            color: white;
+          }
+
+          .qx-section {
+            margin: 10px;
+          }
+        }
+
+        @media (max-width: 767px) and (max-height: 650px) {
+          .qx-chart-viewport {
+            height: max(
+              120px,
+              calc(100dvh - 405px)
+            ) !important;
+            min-height: 120px !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
+
 createRoot(
   document.getElementById("root")
-).render(<App />);
+).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
