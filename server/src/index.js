@@ -5298,8 +5298,8 @@ const app = express();
 app.use(helmet());
 app.use(cors({
   origin: [
-    process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-    process.env.ADMIN_ORIGIN || 'http://localhost:5174'
+    process.env.CLIENT_ORIGIN || 'https://qu.vkmster.com',
+    process.env.ADMIN_ORIGIN || 'https://quadmin.vkmster.com'
   ]
 }));
 app.use(express.json({ limit: '500kb' }));
