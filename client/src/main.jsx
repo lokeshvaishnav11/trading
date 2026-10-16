@@ -110,6 +110,8 @@ function LiveTradingChart({
   const containerRef = useRef(null);
   const crosshairRef = useRef(null);
   const dragRef = useRef(null);
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
   const scaleRef = useRef(null);
   const dataRef = useRef({});
   const scrollRef = useRef(0);
@@ -119,7 +121,7 @@ function LiveTradingChart({
     height: 560
   });
 
-  const [spacing, setSpacing] = useState(28);
+  const [spacing, setSpacing] = useState(38);
   const [scrollOffset, setScrollOffset] = useState(0);
 
   const spacingRef = useRef(spacing);
@@ -131,15 +133,15 @@ function LiveTradingChart({
 
   const colors = {
     background: "#1d202c",
-    panel: "#111c2b",
-    border: "#203047",
-    grid: "#404452",
-    text: "#e8f0fa",
-    muted: "#91a4bd",
-    green: "#0ba65e",
-    red: "#ed5749",
-    crosshair: "#72839b",
-    blue: "#315d95"
+    panel: "#303343",
+    border: "#343849",
+    grid: "#414451",
+    text: "#f0f0f3",
+    muted: "#b1b2bd",
+    green: "#0da45d",
+    red: "#ed584b",
+    crosshair: "#9094a2",
+    blue: "#2899f5"
   };
 
   const validCandles = useMemo(() => {
@@ -199,12 +201,12 @@ function LiveTradingChart({
   };
 
   const zoomIn = () => {
-    setSpacing(v => Math.min(32, v + 2));
+    setSpacing(v => Math.min(90, v + 5));
     scaleRef.current = null;
   };
 
   const zoomOut = () => {
-    setSpacing(v => Math.max(5, v - 2));
+    setSpacing(v => Math.max(9, v - 5));
     scaleRef.current = null;
   };
 
@@ -215,7 +217,7 @@ function LiveTradingChart({
   };
 
   const resetChart = () => {
-    setSpacing(24);
+    setSpacing(38);
     setScrollOffset(0);
     scrollRef.current = 0;
     scaleRef.current = null;
@@ -238,7 +240,7 @@ function LiveTradingChart({
     const updateSize = () => {
       setSize({
         width: Math.max(280, element.clientWidth),
-        height: Math.max(400, element.clientHeight)
+        height: Math.max(180, element.clientHeight)
       });
     };
 
@@ -335,7 +337,7 @@ function LiveTradingChart({
       }
 
       // Reserve 4 candle spaces after latest candle.
-      const futureSpace = Math.max(100, plotWidth * 0.38);
+      const futureSpace = Math.min(plotWidth * 0.42, Math.max(88, plotWidth * 0.30));
 
       const capacity = Math.max(
         8,
@@ -488,7 +490,7 @@ function LiveTradingChart({
       // Horizontal grid.
       ctx.lineWidth = 1;
       ctx.strokeStyle = colors.grid;
-      ctx.setLineDash([3, 7]);
+      ctx.setLineDash([]);
 
       for (let i = 0; i <= 6; i++) {
         const y =
@@ -526,7 +528,7 @@ function LiveTradingChart({
       // Candles.
       const candleWidth = Math.max(
         4,
-        Math.min(26, candleGap * 0.82)
+        Math.min(76, candleGap * 0.9)
       );
 
       rows.forEach((c, index) => {
@@ -618,6 +620,35 @@ function LiveTradingChart({
         );
       });
 
+      // Screenshot-style beginning-of-trade guide and future expiry marker.
+      const tradeLineX = lastX + candleGap * 0.5;
+      ctx.save();
+      ctx.strokeStyle = "#f4f4f5";
+      ctx.lineWidth = 1.3;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(tradeLineX, top);
+      ctx.lineTo(tradeLineX, plotBottom);
+      ctx.stroke();
+      ctx.restore();
+      // Only display a real expiry marker when the server supplies expiresAt.
+      const nextExpiry = activeTrades.find(t => t.expiresAt);
+      if (nextExpiry && rows.length > 1) {
+        const interval = Math.max(1000, rows[rows.length - 1].time - rows[rows.length - 2].time);
+        const expiry = new Date(nextExpiry.expiresAt).getTime();
+        const endLineX = lastX + ((expiry - last.time) / interval) * candleGap;
+        if (Number.isFinite(endLineX) && endLineX > left && endLineX < plotRight) {
+          ctx.save();
+          ctx.strokeStyle = "#626674";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(endLineX, top);
+          ctx.lineTo(endLineX, plotBottom);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
       // Current price line.
       const markerY = yAt(markerPrice);
 
@@ -626,9 +657,9 @@ function LiveTradingChart({
           ? colors.green
           : colors.red;
 
-      ctx.strokeStyle = markerColor;
-      ctx.lineWidth = 1.1;
-      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = "#f4f4f5";
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([7, 6]);
 
       ctx.beginPath();
       ctx.moveTo(left, markerY);
@@ -670,8 +701,8 @@ function LiveTradingChart({
       // Right price axis.
       ctx.fillStyle = colors.muted;
       ctx.font = width < 480
-        ? "11px Arial"
-        : "12px Arial";
+        ? "10px Arial"
+        : "11px Arial";
       ctx.textAlign = "left";
 
       for (let i = 0; i <= 6; i++) {
@@ -694,27 +725,24 @@ function LiveTradingChart({
         Math.min(plotBottom - 14, markerY)
       );
 
-      ctx.fillStyle = markerColor;
-      ctx.fillRect(
-        plotRight,
-        labelY - 14,
-        right,
-        28
-      );
+      ctx.fillStyle = colors.blue;
+      ctx.beginPath();
+      ctx.roundRect(plotRight + 2, labelY - 15, right - 4, 30, 14);
+      ctx.fill();
 
       ctx.fillStyle = "#fff";
-      ctx.font = "bold 12px Arial";
-      ctx.textAlign = "left";
+      ctx.font = "12px Arial";
+      ctx.textAlign = "center";
 
       ctx.fillText(
         priceText(markerPrice),
-        plotRight + 6,
+        plotRight + right / 2,
         labelY + 4
       );
 
       // Time axis.
       ctx.fillStyle = colors.muted;
-      ctx.font = "11px Arial";
+      ctx.font = "10px Arial";
       ctx.textAlign = "center";
 
       const timeStep = Math.max(
@@ -838,66 +866,57 @@ function LiveTradingChart({
         <canvas
           ref={canvasRef}
           onPointerDown={event => {
-            event.currentTarget.setPointerCapture(
-              event.pointerId
-            );
-
-            dragRef.current = {
-              x: event.clientX,
-              startOffset: scrollRef.current
-            };
+            event.currentTarget.setPointerCapture(event.pointerId);
+            pointersRef.current.set(event.pointerId, {x:event.clientX,y:event.clientY});
+            if (pointersRef.current.size === 2) {
+              const [a,b] = [...pointersRef.current.values()];
+              pinchRef.current = {distance:Math.hypot(a.x-b.x,a.y-b.y),spacing:spacingRef.current};
+              dragRef.current = null;
+            } else if (pointersRef.current.size === 1) {
+              dragRef.current = {x:event.clientX,startOffset:scrollRef.current};
+            }
           }}
           onPointerMove={event => {
-            const rect =
-              event.currentTarget.getBoundingClientRect();
-
-            if (dragRef.current) {
-              const distance =
-                event.clientX - dragRef.current.x;
-
-              const movedCandles = Math.round(
-                distance / spacingRef.current
-              );
-
-              setScrollOffset(
-                Math.max(
-                  0,
-                  Math.min(
-                    maxScroll,
-                    dragRef.current.startOffset +
-                      movedCandles
-                  )
-                )
-              );
-
+            const rect = event.currentTarget.getBoundingClientRect();
+            if (pointersRef.current.has(event.pointerId)) {
+              pointersRef.current.set(event.pointerId,{x:event.clientX,y:event.clientY});
+            }
+            if (pointersRef.current.size === 2 && pinchRef.current) {
+              const [a,b] = [...pointersRef.current.values()];
+              const distance = Math.hypot(a.x-b.x,a.y-b.y);
+              if (pinchRef.current.distance > 0) {
+                setSpacing(Math.max(9,Math.min(90,pinchRef.current.spacing * distance/pinchRef.current.distance)));
+                scaleRef.current = null;
+              }
               crosshairRef.current = null;
-            } else {
-              crosshairRef.current = {
-                x: event.clientX - rect.left,
-                y: event.clientY - rect.top
-              };
+            } else if (dragRef.current) {
+              const distance = event.clientX - dragRef.current.x;
+              const movedCandles = Math.round(distance / spacingRef.current);
+              setScrollOffset(Math.max(0,Math.min(maxScroll,dragRef.current.startOffset+movedCandles)));
+              crosshairRef.current = null;
+            } else if (event.pointerType === "mouse") {
+              crosshairRef.current = {x:event.clientX-rect.left,y:event.clientY-rect.top};
             }
           }}
           onPointerUp={event => {
-            if (
-              event.currentTarget.hasPointerCapture(
-                event.pointerId
-              )
-            ) {
-              event.currentTarget.releasePointerCapture(
-                event.pointerId
-              );
+            pointersRef.current.delete(event.pointerId);
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
             }
-
+            pinchRef.current = null;
             dragRef.current = null;
+            if (pointersRef.current.size === 1) {
+              const a = [...pointersRef.current.values()][0];
+              dragRef.current = {x:a.x,startOffset:scrollRef.current};
+            }
           }}
-          onPointerCancel={() => {
+          onPointerCancel={event => {
+            pointersRef.current.delete(event.pointerId);
+            pinchRef.current = null;
             dragRef.current = null;
           }}
           onPointerLeave={() => {
-            if (!dragRef.current) {
-              crosshairRef.current = null;
-            }
+            if (!dragRef.current && !pinchRef.current) crosshairRef.current = null;
           }}
           onWheel={event => {
             event.preventDefault();
@@ -909,9 +928,9 @@ function LiveTradingChart({
             } else {
               setSpacing(v =>
                 Math.max(
-                  5,
+                  9,
                   Math.min(
-                    32,
+                    90,
                     v + (event.deltaY < 0 ? 2 : -2)
                   )
                 )
@@ -986,6 +1005,100 @@ function TradeTable({ trades, now, prices = {}, onClose, closingId }) {
   );
 }
 
+const PAIR_CATALOG = [
+  {symbol:"USD/COP", category:"CURRENCIES", flags:"🇺🇸🇨🇴"},
+  {symbol:"USD/ZAR", category:"CURRENCIES", flags:"🇺🇸🇿🇦"},
+  {symbol:"USD/INR", category:"CURRENCIES", flags:"🇺🇸🇮🇳"},
+  {symbol:"USD/NGN", category:"CURRENCIES", flags:"🇺🇸🇳🇬"},
+  {symbol:"EUR/GBP", category:"CURRENCIES", flags:"🇪🇺🇬🇧"},
+  {symbol:"EUR/JPY", category:"CURRENCIES", flags:"🇪🇺🇯🇵"},
+  {symbol:"NZD/CHF", category:"CURRENCIES", flags:"🇳🇿🇨🇭"},
+  {symbol:"USD/MXN", category:"CURRENCIES", flags:"🇺🇸🇲🇽"},
+  {symbol:"USD/PHP", category:"CURRENCIES", flags:"🇺🇸🇵🇭"},
+  {symbol:"USD/ARS", category:"CURRENCIES", flags:"🇺🇸🇦🇷"},
+  {symbol:"CAD/JPY", category:"CURRENCIES", flags:"🇨🇦🇯🇵"},
+  {symbol:"EUR/USD", category:"CURRENCIES", flags:"🇪🇺🇺🇸"},
+  {symbol:"GBP/USD", category:"CURRENCIES", flags:"🇬🇧🇺🇸"},
+  {symbol:"BTC/USD", category:"CRYPTO", flags:"₿"}
+];
+const TIMER_OPTIONS = ["00:05","00:10","00:15","00:30","01:00","02:00","05:00","10:00","15:00","30:00","01:00:00","02:00:00"];
+function formatDuration(seconds) {
+  const h=Math.floor(seconds/3600),m=Math.floor(seconds%3600/60),s=seconds%60;
+  return h ? [h,m,s].map(n=>String(n).padStart(2,"0")).join(":") : [m,s].map(n=>String(n).padStart(2,"0")).join(":");
+}
+function BottomNav({page,setPage}) {
+  return <nav className="qx-bottom qx-global-bottom">
+    {[["Trading","▣"],["Support","❔"],["Account","♟"],["Tournaments","🏆"],["More","•••"]].map(([name,icon])=><button key={name} aria-label={name} className={page===name?"selected":""} onClick={()=>setPage(name)}>{icon}</button>)}
+  </nav>;
+}
+function PairPicker({onClose,onSelect,symbol,availablePairs,prices,candles}) {
+  const [tab,setTab]=useState("CURRENCIES");
+  const [query,setQuery]=useState("");
+  const [favorites,setFavorites]=useState(()=>{try{return JSON.parse(localStorage.getItem("qx_favorite_pairs")||"[]")}catch{return []}});
+  useEffect(()=>{localStorage.setItem("qx_favorite_pairs",JSON.stringify(favorites))},[favorites]);
+  const [onlyFavorites,setOnlyFavorites]=useState(false);
+  const [sort,setSort]=useState("Name");
+  const rows=[...PAIR_CATALOG,...availablePairs.filter(sym=>!PAIR_CATALOG.some(p=>p.symbol===sym)).map(sym=>({symbol:sym,category:sym.includes("BTC")||sym.includes("ETH")?"CRYPTO":"CURRENCIES",flags:"🌐"}))].filter(p=>(tab==="CRYPTO"?p.category==="CRYPTO":tab==="CURRENCIES"?p.category==="CURRENCIES":false)).filter(p=>p.symbol.toLowerCase().includes(query.toLowerCase())).filter(p=>!onlyFavorites||favorites.includes(p.symbol)).sort((a,b)=>sort==="Name"?a.symbol.localeCompare(b.symbol):0);
+  const first=Number(candles?.[0]?.open),last=Number(candles?.[candles.length-1]?.close);
+  return <div className="qx-overlay" role="dialog" aria-label="Select trade pair">
+    <div className="qx-overlay-head"><strong>Select trade pair</strong><button onClick={onClose}>×</button></div>
+    <div className="qx-category-tabs">{["CURRENCIES","CRYPTO","COMMODITIES","STOCKS"].map(t=><button className={tab===t?"active":""} key={t} onClick={()=>setTab(t)}>{t}</button>)}</div>
+    <div className="qx-pair-search"><button className={onlyFavorites?"active":""} onClick={()=>setOnlyFavorites(v=>!v)}>★ {favorites.length}</button><input placeholder="⌕   Search" value={query} onChange={e=>setQuery(e.target.value)}/></div>
+    <div className="qx-sort">Sort by: <button onClick={()=>setSort(v=>v==="Name"?"Default":"Name")}>{sort} ▾</button></div>
+    <div className="qx-pair-list">{rows.length?rows.map(p=>{
+      const enabled=availablePairs.includes(p.symbol);
+      const change=p.symbol===symbol&&Number.isFinite(first)&&first!==0&&Number.isFinite(last)?(last-first)/first*100:null;
+      return <div className="qx-pair-item" key={p.symbol}>
+        <button className={favorites.includes(p.symbol)?"qx-star active":"qx-star"} onClick={()=>setFavorites(f=>f.includes(p.symbol)?f.filter(x=>x!==p.symbol):[...f,p.symbol])}>☆</button>
+        <button className="qx-pair-choice" onClick={()=>enabled&&onSelect(p.symbol)} disabled={!enabled}>
+          <span className="qx-pair-name"><span>{p.flags}</span> {p.symbol}{p.symbol.includes("USD/")||p.symbol==="EUR/USD"||p.symbol==="GBP/USD"?" (OTC)":""}</span>
+          <small>{enabled?"Available to trade · Points-based":"Not enabled by trading server"}</small>
+        </button>
+        {p.symbol===symbol&&<span className="qx-current-pair">✓</span>}
+        <span className={change===null?"qx-change muted":change>=0?"qx-change up":"qx-change down"}>{change===null?"—":`${change>=0?"↑ +":"↓ "}${change.toFixed(2)}%`}</span>
+      </div>;
+    }):<p className="qx-empty">No instruments available in this category.</p>}</div>
+  </div>;
+}
+function MoreScreen({setPage,logout}) {
+  const sections=[["Market","▤"],["Analytics","◉"],["TOP","▥"],["Signals","◎"]];
+  return <main className="qx-more qx-screen"><h2>More <button onClick={()=>setPage("Trading")}>×</button></h2>
+    {sections.map(([name,icon])=><button className="qx-more-card" key={name} onClick={()=>setPage(name)}><span>{icon}</span><b>{name}</b><span className="qx-more-arrow">›</span></button>)}
+    <div className="qx-more-links">{[["Deposit","Wallet"],["Withdrawal","Withdrawal"],["Payments","Payments"],["Trades","Trades"]].map(([label,target])=><button key={label} onClick={()=>setPage(target)}>{label}</button>)}</div>
+    <div className="qx-more-settings"><button onClick={()=>setPage("Settings")}>⚙ Settings</button><button onClick={logout}>⇥ Logout</button></div>
+    <div className="qx-more-foot"><button onClick={()=>setPage("Install App")}> &nbsp; Install App</button><button onClick={()=>setPage("Support")}>▢ &nbsp; Join Us</button></div>
+  </main>;
+}
+function TournamentScreen({overview}) {
+  const [tab,setTab]=useState("ACTIVE");
+  const tournaments=Array.isArray(overview?.tournaments)?overview.tournaments:[];
+  const rows=tournaments.filter(t=>tab==="ACTIVE"?t.status!=="completed":t.status==="completed");
+  return <main className="qx-tournaments qx-screen"><div className="qx-tournament-tabs">{["ACTIVE","COMPLETED"].map(t=><button key={t} className={tab===t?"active":""} onClick={()=>setTab(t)}>{t} {t==="ACTIVE"&&tournaments.length>0?tournaments.length:""}</button>)}</div>
+    <h3>{tab==="ACTIVE"?"Available for participation":"Completed tournaments"} ({rows.length})</h3>
+    {rows.length?rows.map((t,i)=><article className="qx-tournament-card" key={t._id||i}><div className="qx-tournament-banner"><strong>{t.name||"Tournament"}</strong><span>PRIZE POOL<br/><b>{Number(t.prizePoolUSD||0).toLocaleString()} $</b></span></div><div className="qx-tournament-stats"><span><b>{t.entryFeeUSD??0} $</b><small>Entry fee</small></span><span><b>{t.durationDays??"—"} days</b><small>Duration</small></span></div><p>{t.description||"See tournament rules for details."}</p></article>):<p className="qx-empty">No {tab.toLowerCase()} tournaments have been published by your server.</p>}
+  </main>;
+}
+function ProfileScreen({user,onSaved}) {
+  const [profile,setProfile]=useState({nickname:user.nickname||user.name||"",firstName:user.firstName||"",lastName:user.lastName||"",dob:user.dob||"",address:user.address||"",country:user.country||"India"});
+  const [saving,setSaving]=useState(false);
+  async function saveProfile(e){e.preventDefault();setSaving(true);setNotice("");try{await api("/me/profile","PATCH",profile);setNotice("Profile saved successfully.");onSaved?.()}catch(err){setNotice("Could not save profile: "+err.message+". Your changes were not saved.")}finally{setSaving(false)}}
+  const [notice,setNotice]=useState("");
+  return <main className="qx-profile qx-screen"><h3>Personal data:</h3><div className="qx-profile-user"><span className="qx-avatar">●</span><div><b>{user.email}</b><p>ID: {user._id?String(user._id).slice(-8):"—"}</p><span className="qx-unverified">Verification status: {user.verified?"Verified":"Not verified"}</span></div></div>
+    <form onSubmit={saveProfile}>
+      {[["Nickname","nickname","text"],["First Name","firstName","text"],["Last Name","lastName","text"],["Date of birth","dob","date"],["Email","email","email"],["Country","country","text"],["Address","address","text"]].map(([label,key,type])=><label className="qx-profile-field" key={key}><span>{label}</span><input type={type} readOnly={key==="email"} value={key==="email"?user.email:profile[key]} placeholder="Empty" onChange={e=>setProfile(p=>({...p,[key]:e.target.value}))}/></label>)}
+      <button className="qx-profile-save" disabled={saving}>{saving?"Saving…":"Save"}</button>{notice&&<p className="qx-message">{notice}</p>}
+    </form>
+  </main>;
+}
+function MarketScreen({prices,setSymbol,setPage}) {
+  const pairs=Object.entries(prices||{}).filter(([,price])=>Number.isFinite(Number(price))&&price!==null);
+  return <main className="qx-screen qx-functional-screen"><h2>Market</h2><p>Prices supplied by your connected trading server. These are not independently verified exchange quotes.</p>{pairs.length?<div className="qx-market-list">{pairs.map(([pair,price])=><button key={pair} onClick={()=>{setSymbol(pair);setPage("Trading")}}><strong>{pair}</strong><span>{Number(price).toFixed(decimals(pair))}</span><span>›</span></button>)}</div>:<p>No market prices available from the server.</p>}</main>;
+}
+function SettingsScreen(){
+  const [reduceMotion,setReduceMotion]=useState(()=>localStorage.getItem("qx_reduce_motion")==="true");
+  useEffect(()=>{localStorage.setItem("qx_reduce_motion",String(reduceMotion));document.documentElement.classList.toggle("qx-reduce-motion",reduceMotion);return ()=>document.documentElement.classList.remove("qx-reduce-motion")},[reduceMotion]);
+  return <main className="qx-screen qx-functional-screen"><h2>Settings</h2><label className="qx-settings-row"><span>Reduce interface animations</span><input type="checkbox" checked={reduceMotion} onChange={e=>setReduceMotion(e.target.checked)}/></label><p>Trading data and execution are controlled by the connected server.</p></main>;
+}
 function App() {
   const [user, setUser] = useState(null);
   const [overview, setOverview] = useState(null);
@@ -1001,6 +1114,10 @@ function App() {
   const [amount, setAmount] = useState("10");
   const [bonusVisible, setBonusVisible] = useState(true);
   const [pairMenu, setPairMenu] = useState(false);
+  const [timerOpen,setTimerOpen] = useState(false);
+  const [timerMode,setTimerMode] = useState("TIMER");
+  const [timerSeconds,setTimerSeconds] = useState(60);
+  const [manualTimer,setManualTimer] = useState(false);
   const [candles, setCandles] = useState([]);
   const [price, setPrice] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -1366,23 +1483,29 @@ setConnected(
          <main className="qx-mobile-shell">
            {bonusVisible && <div className="qx-bonus"><span>🚀</span> Get a 50% bonus on your deposit! <b>50%</b><button onClick={() => setBonusVisible(false)}>×</button></div>}
            <section className="qx-chart-area">
-             <div className="qx-chart-meta"><button onClick={() => setPairMenu(v => !v)}>•••</button><span>{new Date(now).toLocaleTimeString("en-GB", {timeZone:"Asia/Kolkata"})}<small>UTC+5:30</small></span><span className="qx-info">●</span></div>
+             <div className="qx-chart-meta"><button onClick={() => setPage("More")}>•••</button><span>{new Date(now).toLocaleTimeString("en-GB", {timeZone:"Asia/Kolkata"})}<small>UTC+5:30</small></span><span className="qx-info">●</span></div>
              <LiveTradingChart symbol={symbol} candles={candles} currentPrice={price} trades={currentOpen} connected={connected} now={now} />
            </section>
            <section className="qx-trade-panel">
              <div className="qx-pair-row"><button className="qx-pair" onClick={() => setPairMenu(v => !v)}>🌐 &nbsp;{symbol} (OTC) <span>⌄</span></button><div className="qx-pending">PENDING TRADE <span className="qx-toggle" /></div></div>
-             {pairMenu && <div className="qx-pair-menu">{PAIRS.map(p => <button key={p} onClick={() => {setSymbol(p);setPairMenu(false)}}>{p} (OTC)</button>)}</div>}
-             <div className="qx-fields"><label className="qx-field"><span>Timer</span><div className="qx-timer">00:01:00</div></label><label className="qx-field"><span>Investment</span><div className="qx-invest"><button onClick={() => setAmount(String(Math.max(1,Number(amount || 1)-1)))}>−</button><input type="number" min="1" max="1000" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /><button onClick={() => setAmount(String(Math.min(1000,Number(amount || 0)+1)))}>+</button></div></label></div>
-             <div className="qx-payout"><span>Return</span><strong>Points-based</strong></div>
+             {pairMenu && <PairPicker onClose={()=>setPairMenu(false)} onSelect={p=>{setSymbol(p);setPairMenu(false)}} symbol={symbol} availablePairs={Array.isArray(overview?.pairs)&&overview.pairs.length?overview.pairs.filter(p=>p.enabled!==false).map(p=>typeof p==="string"?p:p.symbol).filter(Boolean):PAIRS} prices={prices} candles={candles}/>}
+             <div className="qx-fields"><div className="qx-field qx-timer-field"><span>Timer</span><button className="qx-timer" onClick={()=>setTimerOpen(v=>!v)}>{formatDuration(timerSeconds)}</button>{timerOpen&&<div className="qx-timer-pop"><div className="qx-timer-tabs">{["TIMER","TIME"].map(t=><button key={t} className={timerMode===t?"active":""} onClick={()=>setTimerMode(t)}>{t}</button>)}</div>{timerMode==="TIMER"?<><div className="qx-timer-grid">{TIMER_OPTIONS.map((t,i)=><button className={timerSeconds===[5,10,15,30,60,120,300,600,900,1800,3600,7200][i]?"active":""} key={t} onClick={()=>{setTimerSeconds([5,10,15,30,60,120,300,600,900,1800,3600,7200][i]);setTimerOpen(false)}}>{t}</button>)}</div><button className="qx-timer-manual" onClick={()=>setManualTimer(v=>!v)}>Set manually</button>{manualTimer&&<input type="number" min="5" max="7200" aria-label="Seconds" value={timerSeconds} onChange={e=>setTimerSeconds(Math.max(5,Math.min(7200,Number(e.target.value)||5)))}/>}</>:<div className="qx-time-note">Choose an expiry time from the schedule provided by your trading server.</div>}</div>}</div><label className="qx-field"><span>Investment</span><div className="qx-invest"><button onClick={() => setAmount(String(Math.max(1,Number(amount || 1)-1)))}>−</button><input type="number" min="1" max="1000" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /><button onClick={() => setAmount(String(Math.min(1000,Number(amount || 0)+1)))}>+</button></div></label></div>
+             <div className="qx-payout"><span>Return</span><strong>Points-based</strong></div><p className="qx-timer-disclaimer">Timer is a display preference only. Trade settlement follows the published server schedule.</p>
              <div className="qx-actions"><button className="qx-buy" disabled={busy || !connected} onClick={() => place("buy")}>Buy <span>↑</span></button><button className="qx-sell" disabled={busy || !connected} onClick={() => place("sell")}>Sell <span>↓</span></button></div>
              {message && <div className="qx-message">{message}</div>}
            </section>
-           <nav className="qx-bottom"><button className="selected" onClick={() => setPage("Trading")}>▣</button><button onClick={() => setPage("Support")}>❔</button><button onClick={() => setPage("Account")}>♟</button><button onClick={() => setPage("Wallet")}>🏆</button><button onClick={() => setPage("Support")}>•••</button></nav>
+           <BottomNav page={page} setPage={setPage}/>
            {open.length > 0 && <details className="qx-history"><summary>Active Trades ({open.length})</summary><TradeTable trades={open} now={now} prices={prices} onClose={closeTrade} closingId={closingId}/></details>}
            {closed.length > 0 && <details className="qx-history"><summary>Trade History</summary><TradeTable trades={closed} now={now} prices={prices}/></details>}
          </main>
        )}
-       {page !== "Trading" && <nav className="qx-secondary-nav">{["Trading","Wallet","Support","Account"].map(p => <button key={p} onClick={() => setPage(p)}>{p}</button>)}<button onClick={logout}>Logout</button></nav>}
+       {page !== "Trading" && page !== "Wallet" && <BottomNav page={page} setPage={setPage}/>}
+       {page === "More" && <MoreScreen setPage={setPage} logout={logout}/>}
+       {page === "Tournaments" && <TournamentScreen overview={overview}/>}
+       {page === "Account" && <ProfileScreen user={user} onSaved={refresh}/>}
+       {page === "Market"&&<MarketScreen prices={prices} setSymbol={setSymbol} setPage={setPage}/>}
+       {page === "Settings"&&<SettingsScreen/>}
+       {["Analytics","TOP","Signals","Withdrawal","Payments","Trades","Install App"].includes(page)&&<main className="qx-screen qx-placeholder"><h2>{page}</h2><p>{page === "Trades" ? "Trade history is shown below." : "This section needs a corresponding backend API to show live account data."}</p>{page === "Trades"&&<TradeTable trades={trades} now={now} prices={prices} onClose={closeTrade} closingId={closingId}/>}<button onClick={()=>setPage("More")}>Back to More</button></main>}
       {page === "Wallet" && (
         <main className="qx-deposit-page">
           <div className="qx-deposit-head"><strong>Deposit</strong><button onClick={() => {setPage("Trading");setDepositStep("methods")}}>×</button></div>
@@ -1482,7 +1605,7 @@ setConnected(
           </Panel>
         </main>
       )}
-      {page === "Account" && (
+      {false && page === "Account" && (
         <main style={{
           maxWidth: 1100,
           margin: "auto",
