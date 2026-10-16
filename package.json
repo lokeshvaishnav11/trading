@@ -1,0 +1,16 @@
+{
+  "name": "quotexx-fullstack",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\" \"npm run dev -w admin\"",
+    "start": "npm start -w server"
+  },
+  "workspaces": [
+    "server",
+    "client",
+    "admin"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
