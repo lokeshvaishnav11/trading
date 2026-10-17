@@ -5925,96 +5925,172 @@ async function getSchedule(symbol, timestamp = Date.now()) {
 
 // ================= CHART =================
 
-app.get('/api/trading/chart', auth, asyncH(async (req, res) => {
-  const symbol = validateSymbol(
-    String(req.query.symbol || 'EUR/USD')
-  );
 
-  const now = Date.now();
-  const intervalMs = 5000;
-  const bucket = Math.floor(now / intervalMs) * intervalMs;
-  const count = 80;
+ // ================= 1 MINUTE LIVE CHART =================
 
-  const timestamps = Array.from(
-    { length: count },
-    (_, i) => bucket - (count - 1 - i) * intervalMs
-  );
+const CANDLE_INTERVAL_MS = 60 * 1000;
+const CHART_CANDLE_COUNT = 80;
 
-  const scheduleByDate = new Map();
+app.get(
+  '/api/trading/chart',
+  auth,
+  asyncH(async (req, res) => {
 
-  for (const ts of [...timestamps, now]) {
-    const date = istInfo(ts).date;
-
-    if (!scheduleByDate.has(date)) {
-      scheduleByDate.set(
-        date,
-        await getSchedule(symbol, ts)
-      );
-    }
-  }
-
-  const priceAt = ts => {
-    const schedule = scheduleByDate.get(
-      istInfo(ts).date
+    const symbol = validateSymbol(
+      String(req.query.symbol || 'EUR/USD')
     );
 
-    return marketPrice(schedule, symbol, ts);
-  };
+    const now = Date.now();
 
-  const candles = timestamps.map(start => {
-    const end = Math.min(start + intervalMs - 1, now);
-    const values = [];
+    // Every candle starts at an exact minute boundary
+    const bucket =
+      Math.floor(now / CANDLE_INTERVAL_MS) *
+      CANDLE_INTERVAL_MS;
 
-    for (let ts = start; ts < end; ts += 1000) {
-      values.push(priceAt(ts));
+    const timestamps = Array.from(
+      { length: CHART_CANDLE_COUNT },
+      (_, i) =>
+        bucket -
+        (CHART_CANDLE_COUNT - 1 - i) *
+        CANDLE_INTERVAL_MS
+    );
+
+    // Load each date's schedule only once
+    const scheduleByDate = new Map();
+
+    for (const ts of [...timestamps, now]) {
+      const date = istInfo(ts).date;
+
+      if (!scheduleByDate.has(date)) {
+        scheduleByDate.set(
+          date,
+          await getSchedule(symbol, ts)
+        );
+      }
     }
 
-    values.push(priceAt(end));
+    // Existing deterministic simulated price engine
+    const priceAt = ts => {
+      const schedule = scheduleByDate.get(
+        istInfo(ts).date
+      );
 
-    const valid = values.filter(Number.isFinite);
-
-    if (!valid.length) return null;
-
-    return {
-      time: start,
-      open: valid[0],
-      high: Math.max(...valid),
-      low: Math.min(...valid),
-      close: valid.at(-1)
+      return marketPrice(
+        schedule,
+        symbol,
+        ts
+      );
     };
-  }).filter(Boolean);
 
-  const schedule = scheduleByDate.get(
-    istInfo(now).date
-  );
+    // Generate 1-minute OHLC candles
+    const candles = timestamps
+      .map(start => {
 
-  const scheduledNow = Boolean(
-    schedule && isDemoSession(now)
-  );
+        const end = Math.min(
+          start + CANDLE_INTERVAL_MS - 1,
+          now
+        );
 
-  const currentPrice = priceAt(now);
+        const values = [];
 
-  res.set('Cache-Control', 'no-store');
+        // Opening price
+        values.push(priceAt(start));
 
-  res.json({
-    symbol,
-    simulated: true,
-    marketType: scheduledNow
-      ? 'scheduled-demo'
-      : 'automatic-demo',
-    scheduleStatus: scheduledNow
-      ? 'published'
-      : 'automatic-demo',
-    priceSource: scheduledNow
-      ? 'published-schedule'
-      : 'automatic-demo',
-    timezone: 'Asia/Kolkata',
-    marketOpen: Number.isFinite(currentPrice),
-    candles,
-    currentPrice,
-    serverTime: now
-  });
-}));
+        // Price movement every second
+        for (
+          let ts = start + 1000;
+          ts < end;
+          ts += 1000
+        ) {
+          values.push(priceAt(ts));
+        }
+
+        // Closing/current live price
+        values.push(priceAt(end));
+
+        const valid = values.filter(
+          Number.isFinite
+        );
+
+        if (!valid.length) return null;
+
+        const open = valid[0];
+        const close = valid.at(-1);
+
+        const high = Math.max(...valid);
+        const low = Math.min(...valid);
+
+        return {
+          time: start,
+          open,
+          high,
+          low,
+          close,
+          color:
+            close >= open ? 'green' : 'red',
+          isCurrent:
+            start === bucket
+        };
+      })
+      .filter(Boolean);
+
+    const schedule = scheduleByDate.get(
+      istInfo(now).date
+    );
+
+    const scheduledNow = Boolean(
+      schedule && isDemoSession(now)
+    );
+
+    const currentPrice = priceAt(now);
+
+    // Reverse countdown
+    const nextCandleAt =
+      bucket + CANDLE_INTERVAL_MS;
+
+    const remainingSeconds = Math.ceil(
+      (nextCandleAt - now) / 1000
+    );
+
+    res.set('Cache-Control', 'no-store');
+
+    res.json({
+      symbol,
+      simulated: true,
+
+      marketType: scheduledNow
+        ? 'scheduled-demo'
+        : 'automatic-demo',
+
+      scheduleStatus: scheduledNow
+        ? 'published'
+        : 'automatic-demo',
+
+      priceSource: scheduledNow
+        ? 'published-schedule'
+        : 'automatic-demo',
+
+      timezone: 'Asia/Kolkata',
+
+      marketOpen: Number.isFinite(
+        currentPrice
+      ),
+
+      candleIntervalSeconds: 60,
+
+      candles,
+      currentPrice,
+
+      serverTime: now,
+      candleStart: bucket,
+      nextCandleAt,
+      remainingSeconds
+    });
+  })
+);
+
+// ================= ALL PRICES =================
+
 
 // ================= ALL PRICES =================
 

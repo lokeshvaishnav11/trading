@@ -104,8 +104,19 @@ function LiveTradingChart({
   currentPrice,
   trades = [],
   connected = false,
-  now
+  now,
+  serverTime,
+  nextCandleAt
 }) {
+  const clockSyncRef = useRef({ offset: 0, target: 0 });
+  useEffect(() => {
+    const server = Number(serverTime);
+    const target = Number(nextCandleAt);
+    clockSyncRef.current = {
+      offset: Number.isFinite(server) && server > 0 ? server - Date.now() : 0,
+      target: Number.isFinite(target) && target > 0 ? target : 0
+    };
+  }, [serverTime, nextCandleAt]);
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
   const crosshairRef = useRef(null);
@@ -668,6 +679,37 @@ function LiveTradingChart({
 
       ctx.setLineDash([]);
 
+      // Candle countdown pinned to the live horizontal price line.
+      if (isLiveView) {
+        const sync = clockSyncRef.current;
+        const clockNow = Date.now() + sync.offset;
+        const minuteEnd = Math.floor(clockNow / 60000) * 60000 + 60000;
+        const next = sync.target > clockNow && sync.target <= minuteEnd + 1000
+          ? sync.target : minuteEnd;
+        const remaining = Math.max(1, Math.ceil((next - clockNow) / 1000));
+        const timerText = String(Math.floor(remaining / 60)).padStart(2, "0")
+          + ":" + String(remaining % 60).padStart(2, "0");
+        const timerX = Math.max(left + 37, Math.min(plotRight - 37, tradeLineX + 46));
+        const timerY = Math.max(top + 18, Math.min(plotBottom - 18, markerY));
+
+        ctx.save();
+        ctx.setLineDash([]);
+        ctx.strokeStyle = "#a0a5b2";
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(timerX, top);
+        ctx.lineTo(timerX, plotBottom);
+        ctx.stroke();
+        ctx.fillStyle = "#555d72";
+        ctx.fillRect(timerX - 35, timerY - 17, 70, 34);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 16px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(timerText, timerX, timerY);
+        ctx.restore();
+      }
+
       // Crosshair.
       const crosshair = crosshairRef.current;
 
@@ -1081,11 +1123,11 @@ function TournamentScreen({overview}) {
 function ProfileScreen({user,onSaved}) {
   const [profile,setProfile]=useState({nickname:user.nickname||user.name||"",firstName:user.firstName||"",lastName:user.lastName||"",dob:user.dob||"",address:user.address||"",country:user.country||"India"});
   const [saving,setSaving]=useState(false);
-  async function saveProfile(e){e.preventDefault();setSaving(true);setNotice("");try{await api("/me/profile","PATCH",profile);setNotice("Profile saved successfully.");onSaved?.()}catch(err){setNotice("Could not save profile: "+err.message+". Your changes were not saved.")}finally{setSaving(false)}}
+  async function saveProfile(e){e.preventDefault();setSaving(true);setNotice("");try{await api("/me/profile","PATCH",profile);setNotice("Profile details saved. Identity verification is separate.");onSaved?.()}catch(err){setNotice("Could not save profile: "+err.message+". Your changes were not saved.")}finally{setSaving(false)}}
   const [notice,setNotice]=useState("");
-  return <main className="qx-profile qx-screen"><h3>Personal data:</h3><div className="qx-profile-user"><span className="qx-avatar">●</span><div><b>{user.email}</b><p>ID: {user._id?String(user._id).slice(-8):"—"}</p><span className="qx-unverified">Verification status: {user.verified?"Verified":"Not verified"}</span></div></div>
+  return <main className="qx-profile qx-screen"><h3>Personal data:</h3><div className="qx-profile-user"><span className="qx-avatar">●</span><div><b>{user.email}</b><p>ID: {user._id?String(user._id).slice(-8):"—"}</p><span className="qx-unverified">Identity verification: {user.verified?"Verified":"Not verified"}</span></div></div>
     <form onSubmit={saveProfile}>
-      {[["Nickname","nickname","text"],["First Name","firstName","text"],["Last Name","lastName","text"],["Date of birth","dob","date"],["Email","email","email"],["Country","country","text"],["Address","address","text"]].map(([label,key,type])=><label className="qx-profile-field" key={key}><span>{label}</span><input type={type} readOnly={key==="email"} value={key==="email"?user.email:profile[key]} placeholder="Empty" onChange={e=>setProfile(p=>({...p,[key]:e.target.value}))}/></label>)}
+      {[["Nickname","nickname","text"],["First Name","firstName","text"],["Last Name","lastName","text"],["Date of birth","dob","date"],["Email","email","email"],["Country","country","text"]].map(([label,key,type])=><label className="qx-profile-field" key={key}><span>{label}</span><input type={type} readOnly={key==="email"} value={key==="email"?user.email:profile[key]} placeholder="Empty" onChange={e=>setProfile(p=>({...p,[key]:e.target.value}))}/></label>)}
       <button className="qx-profile-save" disabled={saving}>{saving?"Saving…":"Save"}</button>{notice&&<p className="qx-message">{notice}</p>}
     </form>
   </main>;
@@ -1113,6 +1155,10 @@ function App() {
   const [symbol, setSymbol] = useState("EUR/USD");
   const [amount, setAmount] = useState("10");
   const [bonusVisible, setBonusVisible] = useState(true);
+  const [accountMenu,setAccountMenu]=useState(false);
+  const [accountMode,setAccountMode]=useState("live");
+  const [demoBalance,setDemoBalance]=useState(10000);
+  const [demoTrades,setDemoTrades]=useState([]);
   const [pairMenu, setPairMenu] = useState(false);
   const [timerOpen,setTimerOpen] = useState(false);
   const [timerMode,setTimerMode] = useState("TIMER");
@@ -1120,6 +1166,7 @@ function App() {
   const [manualTimer,setManualTimer] = useState(false);
   const [candles, setCandles] = useState([]);
   const [price, setPrice] = useState(null);
+  const [chartTiming, setChartTiming] = useState({ serverTime: null, nextCandleAt: null });
   const [connected, setConnected] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
@@ -1195,6 +1242,7 @@ function App() {
         }
         setCandles(data.candles);
         setPrice(data.currentPrice);
+        setChartTiming({ serverTime: data.serverTime ?? null, nextCandleAt: data.nextCandleAt ?? null });
       setPrices(prev => ({ ...prev, [symbol]: data.currentPrice }));
 setConnected(
   data.marketOpen === true ||
@@ -1365,7 +1413,27 @@ setConnected(
     setCandles([]);
     setMessage("");
   }
-  const trades = overview?.trades || [];
+  useEffect(()=>{
+    if(accountMode!=="demo"||price==null)return;
+    setDemoTrades(prev=>prev.map(t=>{
+      if(t.status!=="open"||Date.now()-new Date(t.openedAt).getTime()<timerSeconds*1000)return t;
+      const won=t.direction==="buy"?Number(price)>Number(t.entryPrice):Number(price)<Number(t.entryPrice);
+      const draw=Number(price)===Number(t.entryPrice);
+      const returned=draw?t.amountUSD:won?t.amountUSD*1.8:0;
+      setDemoBalance(v=>Number((v+returned).toFixed(2)));
+      return {...t,status:draw?"draw":won?"won":"lost",exitPrice:Number(price),profitUSD:Number((returned-t.amountUSD).toFixed(2))};
+    }));
+  },[now,price,accountMode,timerSeconds]);
+  function demoPlace(direction) {
+    const stake=Number(amount);
+    if(!Number.isFinite(stake)||stake<1||stake>demoBalance){setMessage("Insufficient demo balance or invalid amount.");return;}
+    if(price==null){setMessage("Waiting for chart price.");return;}
+    setDemoBalance(v=>Number((v-stake).toFixed(2)));
+    const id=`demo-${Date.now()}`;
+    setDemoTrades(v=>[{_id:id,symbol,direction,amountUSD:stake,entryPrice:Number(price),status:"open",openedAt:new Date().toISOString()},...v]);
+    setMessage("Virtual demo trade placed. No real funds used.");
+  }
+  const trades = accountMode === "demo" ? demoTrades : (overview?.trades || []);
   const open = trades.filter(t => t.status === "open");
   const closed = trades.filter(t => t.status !== "open");
   const currentOpen = open.filter(t => t.symbol === symbol);
@@ -1475,27 +1543,28 @@ setConnected(
       fontFamily: "Inter, Arial, sans-serif"
     }}>
        <header className="qx-top">
-         <button className="qx-balance" onClick={() => setPage("Wallet")}><span className="qx-plane">➤</span><span className="qx-live">LIVE</span><strong>${fmt(user.balance ?? 0)}</strong><span>⌄</span></button>
+         <button className="qx-balance" onClick={() => setAccountMenu(v=>!v)}><span className="qx-plane">➤</span><span className="qx-live">{accountMode === "live" ? "LIVE" : "DEMO"}</span><strong>${fmt(accountMode === "live" ? user.balance : demoBalance)}</strong><span>⌄</span></button>
          <button className="qx-bell" onClick={() => setPage("Support")}>♧ <span className="qx-count">2</span></button>
-         <button className="qx-deposit" onClick={() => setPage("Wallet")}>Deposit</button>
+         <button className="qx-deposit" onClick={() => {setPage("Wallet");setAccountMenu(false)}}>Deposit</button>
        </header>
+       {accountMenu && <div className="qx-account-dropdown"><div className="qx-account-tier">➤ STANDARD: +0% profit</div><p><strong>{user.email}</strong><br/>ID: {user._id ? String(user._id).slice(-8) : "—"}<br/>Currency: USD</p><button className={accountMode==="live"?"active":""} onClick={()=>{setAccountMode("live");setAccountMenu(false)}}>◉ Live Account <b>${fmt(user.balance)}</b></button><button className={accountMode==="demo"?"active":""} onClick={()=>{setAccountMode("demo");setAccountMenu(false)}}>◉ Demo Account <b>${fmt(demoBalance)}</b></button><small>Demo funds are virtual and cannot be withdrawn.</small><button className="qx-reset-demo" onClick={()=>{setDemoBalance(10000);setDemoTrades([])}}>↻ Reset demo balance</button></div>}
        {page === "Trading" && (
          <main className="qx-mobile-shell">
            {bonusVisible && <div className="qx-bonus"><span>🚀</span> Get a 50% bonus on your deposit! <b>50%</b><button onClick={() => setBonusVisible(false)}>×</button></div>}
            <section className="qx-chart-area">
              <div className="qx-chart-meta"><button onClick={() => setPage("More")}>•••</button><span>{new Date(now).toLocaleTimeString("en-GB", {timeZone:"Asia/Kolkata"})}<small>UTC+5:30</small></span><span className="qx-info">●</span></div>
-             <LiveTradingChart symbol={symbol} candles={candles} currentPrice={price} trades={currentOpen} connected={connected} now={now} />
+             <LiveTradingChart symbol={symbol} candles={candles} currentPrice={price} trades={currentOpen} connected={connected} now={now} serverTime={chartTiming.serverTime} nextCandleAt={chartTiming.nextCandleAt} />
            </section>
            <section className="qx-trade-panel">
              <div className="qx-pair-row"><button className="qx-pair" onClick={() => setPairMenu(v => !v)}>🌐 &nbsp;{symbol} (OTC) <span>⌄</span></button><div className="qx-pending">PENDING TRADE <span className="qx-toggle" /></div></div>
              {pairMenu && <PairPicker onClose={()=>setPairMenu(false)} onSelect={p=>{setSymbol(p);setPairMenu(false)}} symbol={symbol} availablePairs={Array.isArray(overview?.pairs)&&overview.pairs.length?overview.pairs.filter(p=>p.enabled!==false).map(p=>typeof p==="string"?p:p.symbol).filter(Boolean):PAIRS} prices={prices} candles={candles}/>}
              <div className="qx-fields"><div className="qx-field qx-timer-field"><span>Timer</span><button className="qx-timer" onClick={()=>setTimerOpen(v=>!v)}>{formatDuration(timerSeconds)}</button>{timerOpen&&<div className="qx-timer-pop"><div className="qx-timer-tabs">{["TIMER","TIME"].map(t=><button key={t} className={timerMode===t?"active":""} onClick={()=>setTimerMode(t)}>{t}</button>)}</div>{timerMode==="TIMER"?<><div className="qx-timer-grid">{TIMER_OPTIONS.map((t,i)=><button className={timerSeconds===[5,10,15,30,60,120,300,600,900,1800,3600,7200][i]?"active":""} key={t} onClick={()=>{setTimerSeconds([5,10,15,30,60,120,300,600,900,1800,3600,7200][i]);setTimerOpen(false)}}>{t}</button>)}</div><button className="qx-timer-manual" onClick={()=>setManualTimer(v=>!v)}>Set manually</button>{manualTimer&&<input type="number" min="5" max="7200" aria-label="Seconds" value={timerSeconds} onChange={e=>setTimerSeconds(Math.max(5,Math.min(7200,Number(e.target.value)||5)))}/>}</>:<div className="qx-time-note">Choose an expiry time from the schedule provided by your trading server.</div>}</div>}</div><label className="qx-field"><span>Investment</span><div className="qx-invest"><button onClick={() => setAmount(String(Math.max(1,Number(amount || 1)-1)))}>−</button><input type="number" min="1" max="1000" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /><button onClick={() => setAmount(String(Math.min(1000,Number(amount || 0)+1)))}>+</button></div></label></div>
              <div className="qx-payout"><span>Return</span><strong>Points-based</strong></div><p className="qx-timer-disclaimer">Timer is a display preference only. Trade settlement follows the published server schedule.</p>
-             <div className="qx-actions"><button className="qx-buy" disabled={busy || !connected} onClick={() => place("buy")}>Buy <span>↑</span></button><button className="qx-sell" disabled={busy || !connected} onClick={() => place("sell")}>Sell <span>↓</span></button></div>
+             <div className="qx-actions"><button className="qx-buy" disabled={busy || (accountMode === "live" && !connected)} onClick={() => accountMode === "demo" ? demoPlace("buy") : place("buy")}>Buy <span>↑</span></button><button className="qx-sell" disabled={busy || (accountMode === "live" && !connected)} onClick={() => accountMode === "demo" ? demoPlace("sell") : place("sell")}>Sell <span>↓</span></button></div>
              {message && <div className="qx-message">{message}</div>}
            </section>
            <BottomNav page={page} setPage={setPage}/>
-           {open.length > 0 && <details className="qx-history"><summary>Active Trades ({open.length})</summary><TradeTable trades={open} now={now} prices={prices} onClose={closeTrade} closingId={closingId}/></details>}
+           {open.length > 0 && <details className="qx-history"><summary>Active Trades ({open.length})</summary><TradeTable trades={open} now={now} prices={prices} onClose={accountMode==="demo"?undefined:closeTrade} closingId={closingId}/></details>}
            {closed.length > 0 && <details className="qx-history"><summary>Trade History</summary><TradeTable trades={closed} now={now} prices={prices}/></details>}
          </main>
        )}
@@ -1513,14 +1582,13 @@ setConnected(
             {depositStep === "methods" ? <>
               <div className="qx-country">◎ &nbsp; India <span>⌄</span></div>
               <div className="qx-deposit-tabs">{[["POPULAR","♨"],["E-PAY","▣"],["CRYPTO","⬡"]].map(([name,icon]) => <button key={name} className={depositTab===name?"active":""} onClick={()=>setDepositTab(name)}><b>{icon}</b>{name}</button>)}</div>
-              <h2>{depositTab === "POPULAR" ? "Popular in your region (5)" : depositTab === "E-PAY" ? "E-Pay" : "Crypto"}</h2>
+              <h2>{depositTab === "POPULAR" ? "Popular in your region (4)" : depositTab === "E-PAY" ? "E-Pay" : "Crypto"}</h2>
               <div className="qx-method-list">{[
                 {name:"PhonePe",type:"E-PAY",icon:"पे",className:"phonepe",min:10},
                 {name:"UPI",type:"E-PAY",icon:"UPI",className:"upi",min:10},
-                {name:"Binance Pay",type:"CRYPTO",icon:"◆",className:"binance",min:10},
                 {name:"PayTM",type:"E-PAY",icon:"paytm",className:"paytm",min:10},
-                {name:"USDT (BEP-20)",type:"CRYPTO",icon:"₮",className:"usdt",min:20}
-              ].filter(m=>depositTab==="POPULAR"||m.type===depositTab).map(m=><button className="qx-method" key={m.name} onClick={()=>{setDepositForm(f=>({...f,method:m.name}));setDepositStep("amount");setMessage("")}}><span className={"qx-pay-icon "+m.className}>{m.icon}</span><span className="qx-method-name">{m.name}<small>Min. ${m.min.toFixed(2)}</small></span><span className="qx-chevron">›</span></button>)}</div>
+                {name:"USDT",type:"CRYPTO",icon:"₮",className:"usdt",min:10}
+              ].filter(m=>depositTab==="POPULAR"||m.type===depositTab).map(m=><button className="qx-method qx-payment-3d" key={m.name} onClick={()=>{setDepositForm(f=>({...f,method:m.name}));setDepositStep("amount");setMessage("")}}><span className={"qx-pay-icon "+m.className}>{m.icon}</span><span className="qx-method-name">{m.name}<small>Min. ${m.min.toFixed(2)}</small></span><span className="qx-chevron">›</span></button>)}</div>
             </> : <>
               <div className="qx-method-summary"><div className="qx-summary-top"><span className="qx-pay-icon">{depositForm.method==="PhonePe"?"पे":depositForm.method==="USDT (BEP-20)"?"₮":depositForm.method==="Binance Pay"?"◆":depositForm.method==="UPI"?"UPI":"paytm"}</span><strong>{depositForm.method}</strong><button onClick={()=>setDepositStep("methods")}>CHANGE</button></div><div>Min amount: <strong>${depositForm.method==="USDT (BEP-20)"?"20.00":"10.00"}</strong></div><div>Max amount: <strong>$952.00</strong></div><div>Processing time: <strong>12 hours</strong></div></div>
               <div className="qx-deposit-warning">⚠️ &nbsp;<strong>Minimum amount – {depositForm.method==="USDT (BEP-20)"?20:10} $.</strong> Smaller payments won't be credited.</div>
