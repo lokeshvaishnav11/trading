@@ -26,7 +26,8 @@ export const User = model('User', new Schema({
 
   balance: { type: Number, default: 0 },
 
-  demoBalance: { type: Number, default: 10000, min: 0 }
+  demoBalance: { type: Number, default: 10000, min: 0 },
+  popup: { type: String, enum: ['none', '1999', 'waiting_approval', '1399', 'done'], default: 'none' }
 
 }, opts));
 
@@ -166,7 +167,7 @@ export const Trade = model('Trade', new Schema({
 
   // Fixed-time trades use a selected duration; null retained for legacy trades
 
-  durationSeconds: { type: Number, enum: [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600], default: 60 },
+  durationSeconds: { type: Number, min: 1, max: 86400, default: 60 },
 
   payoutPercent: { type: Number, min: 0, max: 100, default: 85 },
 

@@ -14,7 +14,7 @@ const $=id=>document.getElementById(id),prices={'GBP/USD':1.32436,'EUR/USD':1.08
 let qxMode='live',qxLiveBalance=0,qxDemoBalance=10000;
 function toggleAccountMenu(e){if(e)e.stopPropagation();const m=document.getElementById('qxAccountMenu');m.classList.toggle('open');updateAccountMenu()}
 function closeAccountMenu(){document.getElementById('qxAccountMenu')?.classList.remove('open')}
-function updateAccountMenu(){const demo=qxMode==='demo';document.getElementById('qxModeLabel').textContent=demo?'➤ DEMO':'➤ SIMULATED';document.getElementById('qxLiveRadio').checked=!demo;document.getElementById('qxDemoRadio').checked=demo;document.getElementById('qxLiveMoney').textContent=cash(qxLiveBalance);document.getElementById('qxDemoMoney').textContent=cash(qxDemoBalance);document.getElementById('qxMenuEmail').textContent=document.getElementById('qxProfileEmail')?.textContent||'Account email';document.getElementById('qxMenuId').textContent=document.getElementById('qxProfileId')?.textContent||'—'}
+function updateAccountMenu(){const demo=qxMode==='demo';document.getElementById('qxModeLabel').textContent=demo?'➤ DEMO':'➤ LIVE';document.getElementById('qxLiveRadio').checked=!demo;document.getElementById('qxDemoRadio').checked=demo;document.getElementById('qxLiveMoney').textContent=cash(qxLiveBalance);document.getElementById('qxDemoMoney').textContent=cash(qxDemoBalance);document.getElementById('qxMenuEmail').textContent=document.getElementById('qxProfileEmail')?.textContent||'Account email';document.getElementById('qxMenuId').textContent=document.getElementById('qxProfileId')?.textContent||'—'}
 function switchAccountMode(mode){if(qxMode===mode){closeAccountMenu();return}if(trades.some(t=>t.status==='Open')){alert('Wait until open trades finish before switching accounts.');return}if(qxMode==='demo')qxDemoBalance=balance;else qxLiveBalance=balance;qxMode=mode;balance=mode==='demo'?qxDemoBalance:qxLiveBalance;trades=[];render();closeAccountMenu()}
 function resetDemoBalance(){if(qxMode==='demo'&&trades.some(t=>t.status==='Open')){alert('Wait for demo trades to finish first.');return}qxDemoBalance=10000;if(qxMode==='demo'){balance=10000;trades=[];render()}updateAccountMenu()}
 document.addEventListener('click',e=>{const m=document.getElementById('qxAccountMenu');if(m&&!m.contains(e.target)&&!e.target.closest('.header-right .pill'))closeAccountMenu()});
@@ -129,10 +129,10 @@ chartCanvas.addEventListener('wheel',e=>{
  else setChartZoom(zoom*Math.exp(-e.deltaY*.002));
 },{passive:false});
 $('asset').onchange=e=>{asset=e.target.value;let rate=asset==='EUR/USD'?80:78;$('sideasset').textContent=asset+' · '+rate+'%';updatePayout();if(window.qxLoadChart)window.qxLoadChart()};function updatePayout(){$('payout').textContent=cash(Math.max(0,Number($('amount').value))*(1.88))}$('amount').oninput=updatePayout;
-const paymentMethods=['PhonePe','UPI','PayTM','USDT'];
+const paymentMethods=['LG-Pay','WatchPay','BondPay','USDT Pay'];
 function menuButtons(items){return items.map(s=>'<button class="menubtn" data-qx-onclick="openModal(\&#x27;&#x27;+s.toLowerCase()+&#x27;\&#x27;)">'+s+'　›</button>').join('')}
 function openModal(type){closeAccountMenu();$('overlay').classList.add('visible');let title=type[0].toUpperCase()+type.slice(1),body='';if(type==='menu'){closeModal();toggleMore();return}
-else if(type==='deposit'){body='<p class="note">Payment methods are visual previews only. No real payments are accepted.</p><label class="field">Country<select><option>India</option></select></label><div class="payment-tabs"><button id="tab-all" data-qx-onclick="showMethods(\&#x27;all\&#x27;)"><span class="tabicon">♨</span>POPULAR</button><button id="tab-epay" data-qx-onclick="showMethods(\&#x27;epay\&#x27;)"><span class="tabicon">▣</span>E-PAY</button><button id="tab-crypto" data-qx-onclick="showMethods(\&#x27;crypto\&#x27;)"><span class="tabicon">⬡</span>CRYPTO</button></div><h3>Popular in your region (4)</h3><div id="methodList"></div>'}
+else if(type==='deposit'){body='<p class="note">Choose a gateway. Payments are credited only after verified confirmation.</p><label class="field">Country<select><option>India</option></select></label><div class="payment-tabs"><button id="tab-all" data-qx-onclick="showMethods(\&#x27;all\&#x27;)"><span class="tabicon">♨</span>POPULAR</button><button id="tab-epay" data-qx-onclick="showMethods(\&#x27;epay\&#x27;)"><span class="tabicon">▣</span>E-PAY</button><button id="tab-crypto" data-qx-onclick="showMethods(\&#x27;crypto\&#x27;)"><span class="tabicon">⬡</span>CRYPTO</button></div><h3>Popular in your region (4)</h3><div id="methodList"></div>'}
 else if(type.startsWith('method:')){let m=type.slice(7);title='Deposit';body=depositDetailHTML(m)}
 else if(type==='login'||type==='register'||type==='forgot'){
 const reg=type==='register',forgot=type==='forgot';title=forgot?'Password recovery':reg?'Create an account':'Sign in';
@@ -162,48 +162,35 @@ $('modalTitle').textContent=title;$('modalBody').innerHTML=body;document.querySe
 let depositFxRate=null,depositFxUpdated='',depositFxLoading=false;
 const fiatDepositMethods=['PhonePe','UPI','PayTM','UPI Intent'];
 function depositDetailHTML(method){
- const isFiat=fiatDepositMethods.includes(method),logos={'PhonePe':['पे','#6638b8'],'UPI':['UPI','#ffffff'],'PayTM':['paytm','#ffffff'],'UPI Intent':['UPI','#ffffff'],'Binance Pay':['◆','#e7b62e']};
- const logo=logos[method]||['₮','#159d80'],dark=logo[1]==='#ffffff';
- return `<div class="deposit-detail"><div class="deposit-provider"><div class="deposit-provider-head"><span style="background:${logo[1]};color:${dark?'#2d6689':'white'};border-radius:50%;width:45px;height:45px;display:grid;place-items:center;font-weight:800;font-size:20px">${logo[0]}</span><strong>${method}</strong><button data-qx-onclick="8">CHANGE</button></div><div class="deposit-provider-line"><span>Min amount:</span><b>$10.00</b></div><div class="deposit-provider-line"><span>Max amount:</span><b>$952.00</b></div><div class="deposit-provider-line"><span>Processing time:</span><b>12 hours (estimated)</b></div></div>
- <div class="deposit-warning">⚠️ Minimum amount — $10. Smaller amounts are not accepted in this preview.</div>
- <label class="field">Deposit amount (USD)<input class="deposit-amount" id="depositUsd" type="number" min="10" max="952" step="0.01" value="100" data-qx-oninput="55"></label>
- <div class="deposit-presets">${[10,50,100,200].map(n=>`<button data-qx-onclick="setDepositUsd(${n})">$${n}</button>`).join('')}</div>
- ${isFiat?`<div class="deposit-rate"><div class="deposit-conversion"><span>USD deposit</span><strong id="depositUsdText">$100.00</strong></div><div class="deposit-conversion"><span>Rate: 1 USD</span><strong id="depositRateText">Loading…</strong></div><div class="deposit-conversion"><span>INR amount</span><strong id="depositInrText">Loading…</strong></div><small id="depositRateDate">Fetching latest available daily rate…</small><small><a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a> · Reference rate only; actual payment provider may use another rate or fees.</small></div>`:`<div class="deposit-rate">${method} is a crypto payment preview. USD-to-INR conversion is only available for PhonePe, UPI, PayTM and UPI Intent.</div>`}
- <label class="field">Bonus Code (fixed)<input value="TVBONUS50" readonly aria-label="Fixed bonus code" style="opacity:.85;cursor:not-allowed"></label><div class="deposit-warning" style="background:#203f35;color:#a8f6c7">🎁 Deposit $100 or more and get a 50% virtual bonus (up to the $952 deposit limit). Example: $100 + $50 bonus = $150 virtual balance credit.</div><label class="field">Email (optional)<input type="email" placeholder="your@email.com" autocomplete="off"></label>
-
- <div class="deposit-conversion"><span>Deposit (virtual)</span><strong id="depositBase">$100.00</strong></div><div class="deposit-conversion"><span>Bonus (50% for $100+)</span><strong id="depositBonus">$50.00</strong></div><div class="deposit-conversion"><span>Total virtual credit</span><strong id="depositReceive">$150.00</strong></div>
- <button class="deposit-continue" id="depositProceed" data-qx-onclick="51">Preview payment details</button>
- <p class="deposit-note">Minimum $10; maximum $952. The fixed TVBONUS50 code adds a 50% virtual bonus for deposits of $100 or more. INR is calculated using the latest available published daily USD/INR reference rate when online. No invented fallback rate is used.</p></div>`;
+ return `<div class="deposit-detail"><div class="deposit-provider"><strong>${method}</strong></div>
+ <label class="field">Deposit amount (INR)<input id="depositInr" type="number" min="100" step="0.01" value="100" data-qx-oninput="55"></label>
+ <div class="deposit-rate"><div class="deposit-conversion"><span>Current 1 USDT</span><strong id="depositRateText">Loading…</strong></div>
+ <div class="deposit-conversion"><span>Estimated USDT credit</span><strong id="depositReceive">Loading…</strong></div><small id="depositRateDate">Fetching current USDT/INR rate…</small></div>
+ <button class="deposit-continue" id="depositProceed" data-qx-onclick="51">Continue to payment</button>
+ <p class="deposit-note">Minimum ₹100. USDT amount is locked at payment request creation; LIVE balance credits only after a verified successful callback. DEMO balance is separate.</p></div>`;
 }
-function setDepositUsd(n){document.getElementById('depositUsd').value=n;refreshDepositConversion()}
+let qxUSDTINR=0;
 function refreshDepositConversion(){
- const v=Number(document.getElementById('depositUsd')?.value),valid=Number.isFinite(v)&&v>=10&&v<=952;
- const bonus=valid&&v>=100?v*.5:0,base=document.getElementById('depositBase'),bonusEl=document.getElementById('depositBonus');
- if(base)base.textContent=valid?'$'+v.toFixed(2):'—';if(bonusEl)bonusEl.textContent=valid?'$'+bonus.toFixed(2):'—';
- const u=document.getElementById('depositUsdText'),i=document.getElementById('depositInrText'),r=document.getElementById('depositRateText'),receive=document.getElementById('depositReceive'),btn=document.getElementById('depositProceed');
- if(u)u.textContent=valid?'$'+v.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}):'Enter $10–$952';
- if(receive)receive.textContent=valid?'$'+(v+bonus).toFixed(2):'—';
- if(r)r.textContent=depositFxRate?'₹'+depositFxRate.toFixed(4):'Rate unavailable';
- if(i)i.textContent=!valid?'Enter $10–$952':depositFxRate?'₹'+(v*depositFxRate).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}):'Rate unavailable';
- if(btn)btn.disabled=!valid; // Reference FX feed must not block a deposit request
+ const n=Number(document.getElementById('depositInr')?.value);
+ const valid=Number.isFinite(n)&&n>=100&&n<=100000;
+ const r=document.getElementById('depositRateText'),c=document.getElementById('depositReceive'),btn=document.getElementById('depositProceed');
+ if(r)r.textContent=qxUSDTINR?'₹'+qxUSDTINR.toFixed(4):'Rate unavailable';
+ if(c)c.textContent=valid&&qxUSDTINR?(n/qxUSDTINR).toFixed(6)+' USDT':'—';
+ if(btn)btn.disabled=!valid||!qxUSDTINR;
 }
 async function initDepositDetail(method){
- refreshDepositConversion();if(!fiatDepositMethods.includes(method))return;
+ qxUSDTINR=0;refreshDepositConversion();
  const dateEl=document.getElementById('depositRateDate');
- if(depositFxRate){if(dateEl)dateEl.textContent='Published rate updated: '+depositFxUpdated;refreshDepositConversion();return}
- if(depositFxLoading)return;
- depositFxLoading=true;
- try{const response=await fetch('https://open.er-api.com/v6/latest/USD',{cache:'no-store'});if(!response.ok)throw Error('Rate service unavailable');const data=await response.json();if(data.result!=='success'||!(data.rates?.INR>0))throw Error('Invalid rate');depositFxRate=data.rates.INR;depositFxUpdated=data.time_last_update_utc||'Date not provided';}
- catch(e){depositFxRate=null;depositFxUpdated='';}
- finally{depositFxLoading=false;const active=document.getElementById('depositRateDate');if(active)active.textContent=depositFxRate?'Published rate updated: '+depositFxUpdated:'Live rate could not be loaded. Connect to internet and reopen this method.';refreshDepositConversion()}
+ try{const response=await fetch('/api/payments/rate',{cache:'no-store'});const data=await response.json();if(!response.ok)throw Error(data.error||'Rate unavailable');qxUSDTINR=Number(data.rateINR);if(dateEl)dateEl.textContent='Rate updated: '+new Date(data.asOf).toLocaleString();}
+ catch(e){if(dateEl)dateEl.textContent='Rate unavailable. Please retry.'}
+ refreshDepositConversion();
 }
-
 function showMethods(cat){
-const indices=cat==='crypto'?[3]:cat==='epay'?[0,1,2]:[0,1,2,3];
-const logos=[['पे','phonepe'],['UPI','upi'],['paytm','paytm'],['₮','usdt']];
-$('methodList').innerHTML=indices.map(i=>'<button class="method payment-3d" data-index="'+i+'"><span class="paylogo '+logos[i][1]+'">'+logos[i][0]+'</span><span class="payname">'+paymentMethods[i]+'<small>Min. $10.00</small></span><span class="paychevron">›</span></button>').join('');
-['all','epay','crypto'].forEach(x=>{let el=$('tab-'+x);if(el)el.classList.toggle('active',x===cat)});
-document.querySelectorAll('[data-index]').forEach(b=>b.onclick=()=>openModal('method:'+paymentMethods[Number(b.dataset.index)]));
+ const indices=cat==='crypto'?[3]:cat==='epay'?[0,1,2]:[0,1,2,3];
+ const logos=[['₹','phonepe'],['₹','upi'],['₹','paytm'],['₮','usdt']];
+ $('methodList').innerHTML=indices.map(i=>'<button class="method payment-3d" data-index="'+i+'"><span class="paylogo '+logos[i][1]+'">'+logos[i][0]+'</span><span class="payname">'+paymentMethods[i]+'<small>Min. ₹100</small></span><span class="paychevron">›</span></button>').join('');
+ ['all','epay','crypto'].forEach(x=>{let el=$('tab-'+x);if(el)el.classList.toggle('active',x===cat)});
+ document.querySelectorAll('[data-index]').forEach(b=>b.onclick=()=>openModal('method:'+paymentMethods[Number(b.dataset.index)]));
 }
 function toggleMore(force){let p=$('morepanel'),v=$('moreview');let show=force===undefined?!p.classList.contains('show'):force;p.classList.toggle('show',show);if(!show)v.classList.remove('show')}
 function backMore(){$('moreview').classList.remove('show');$('morepanel').classList.add('show')}
@@ -318,25 +305,35 @@ function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function money(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
 function getLiveBalance(u){return Number(u?.demoBalance??0)} // Trading is simulated; separate wallet is user.balance
 function getDemoBalance(u){return Number(u?.demoBalance??10000)}
-function syncAccount() {
-  if (!account) return;
-
-  qxLiveBalance = Number(
-    account.balanceUSD ?? account.balance ?? 0
-  );
-
-  if (qxMode === 'live') {
-    balance = qxLiveBalance;
-  }
-
-  document.getElementById('balance').textContent = cash(balance);
-
-  updateAccountMenu();
+function syncAccount(){
+ if(!account)return;
+ qxLiveBalance=getLiveBalance(account);
+ qxDemoBalance=getDemoBalance(account);
+ if(qxMode==='live')balance=qxLiveBalance;
+ document.getElementById('balance').textContent=money(balance);
+ document.getElementById('qxMenuEmail').textContent=account.email||'';
+ document.getElementById('qxMenuId').textContent=account.id||account._id||'—';
+ document.getElementById('qxLiveMoney').textContent=money(qxLiveBalance);
+ document.getElementById('qxDemoMoney').textContent=money(qxDemoBalance);
+ updateAccountMenu();
+}
+let qxSeenStatuses=new Map(),qxSeenInitialized=false;
+function qxWinToast(profit,symbol){
+ const el=document.createElement('div');el.className='qx-win-toast';el.setAttribute('role','status');
+ el.innerHTML='<div class="qx-win-icon">✓</div><div><strong>Trade successful!</strong><div>'+esc(symbol||'Trade')+' · Profit <b>+'+money(profit)+'</b></div></div>';
+ document.body.appendChild(el);requestAnimationFrame(()=>el.classList.add('show'));
+ setTimeout(()=>{el.classList.remove('show');setTimeout(()=>el.remove(),400)},3500);
+}
+function qxCheckTradeWins(rows){
+ const next=new Map();for(const t of rows){const id=String(t.id||t._id||'');if(!id)continue;
+ const status=String(t.status||'').toLowerCase(),old=qxSeenStatuses.get(id);
+ if(qxSeenInitialized&&old&&['open','pending','active'].includes(old)&&['won','win','success','settled'].includes(status)&&Number(t.profitUSD)>0)qxWinToast(Number(t.profitUSD),t.symbol);
+ next.set(id,status)}qxSeenStatuses=next;qxSeenInitialized=true;
 }
 async function loadOverview(){
  if(!ready||loadingOverview)return;
  loadingOverview=true;
- try{const data=await request('/me/overview');overview=data;account=data.user||account;backendTrades=Array.isArray(data.trades)?data.trades:[];window.qxBackendTrades=backendTrades;syncAccount();renderBackendTrades();}
+ try{const data=await request('/me/overview');overview=data;account=data.user||account;backendTrades=Array.isArray(data.trades)?data.trades:[];window.qxBackendTrades=backendTrades;qxCheckTradeWins(backendTrades);syncAccount();renderBackendTrades();qxCheckApprovedWithdrawal();}
  catch(e){console.warn('Overview:',e.message)}finally{loadingOverview=false}
 }
 function renderBackendTrades(){
@@ -469,34 +466,56 @@ place=async function(direction){
  catch(err){notify(err.message)}finally{requestBusy=false}
 };
 // Keep local demo mode explicitly virtual. Live account balance always comes from backend.
-switchAccountMode = function (mode) {
-  if (mode !== 'live' && mode !== 'demo') return;
-
-  qxMode = mode;
-
-  if (mode === 'live') {
-    balance = Number(account?.balanceUSD ?? account?.balance ?? 0);
-  } else {
-    balance = qxDemoBalance;
-  }
-
-  document.getElementById('balance').textContent = cash(balance);
-
-  updateAccountMenu();
-  renderBackendTrades();
-  closeAccountMenu();
+switchAccountMode=function(mode){
+ if(mode!=='live'&&mode!=='demo')return;
+ if(mode===qxMode){closeAccountMenu();return}
+ if(mode==='demo'){qxLiveBalance=getLiveBalance(account);qxMode='demo';balance=qxDemoBalance}
+ else{qxDemoBalance=balance;qxMode='live';balance=getLiveBalance(account)}
+ document.getElementById('balance').textContent=money(balance);updateAccountMenu();renderBackendTrades();closeAccountMenu();
 };
 resetDemoBalance=function(){qxDemoBalance=10000;if(qxMode==='demo'){balance=10000;trades=[];document.getElementById('balance').textContent=money(balance);renderBackendTrades()}updateAccountMenu()};
 // Keep the exact payment-method UI, but submit real backend deposit REQUESTS (not a payment gateway).
 window.qxSubmitDeposit=async function(){
  if(!ready){notify('Please log in');return}
- const input=document.getElementById('depositUsd');const amount=Number(input?.value);
- if(!Number.isFinite(amount)||amount<10||amount>952){notify('Deposit request amount must be $10–$952');return}
- const method=(document.querySelector('.deposit-provider-head strong')?.textContent||'UPI').trim().slice(0,80);
- const reference=prompt('Optional payment reference (leave empty if none):','');if(reference===null)return;
- try{await request('/me/deposits','POST',{amountUSD:amount,method,reference:reference.slice(0,100)});notify('Deposit request saved as pending. Admin approval credits the separate wallet, not simulated trading funds.');await loadOverview();closeModal()}
- catch(e){notify(e.message)}
+ const amountINR=Number(document.getElementById('depositInr')?.value);
+ const method=(document.querySelector('.deposit-provider strong')?.textContent||'').trim();
+ const gateway={'LG-Pay':'lg','WatchPay':'watch','BondPay':'bond','USDT Pay':'usdt'}[method];
+ if(!gateway||!Number.isFinite(amountINR)||amountINR<100||amountINR>100000){notify('Enter valid amount (₹100–₹100000)');return}
+ const btn=document.getElementById('depositProceed');if(btn)btn.disabled=true;
+ try{const offerAmountINR=qxSelectedOffer===amountINR?qxSelectedOffer:null;const result=await request('/payments/create','POST',{amountINR,gateway,offerAmountINR});notify('Payment order created. Complete payment to credit LIVE balance.');window.open(result.paymentUrl,'_blank','noopener,noreferrer');}
+ catch(e){notify(e.message)}finally{if(btn)btn.disabled=false}
 };
+
+// Optional retention offers. Never condition withdrawal eligibility on another payment.
+function qxOptionalTopupHTML(){
+ const state=String(account?.popup||'none');
+ const amount=state==='1999'?1999:state==='1399'?1399:null;
+ if(!amount)return '';
+ return `<section class="qx-retention"><strong>Optional returning-trader wallet top-up</strong><p>₹${amount.toLocaleString('en-IN')} can be added to your LIVE wallet. This is not a tax or eKYC charge and is never required to request or receive a withdrawal.</p><div class="qx-retention-actions"><button type="button" onclick="qxOfferDeposit(${amount})">Add ₹${amount.toLocaleString('en-IN')}</button></div></section>`;
+}
+let qxSelectedOffer=null;
+function qxOfferDeposit(amount){
+ qxSelectedOffer=amount;
+ openModal('method:LG-Pay');
+ const el=document.getElementById('depositInr');
+ if(el){el.value=String(amount);el.dispatchEvent(new Event('input',{bubbles:true}));refreshDepositConversion()}
+}
+function qxCheckApprovedWithdrawal(){
+ if(!ready||!account)return;
+ const ws=overview?.withdrawals||[];
+ const userId=String(account.id||account._id||account.email||'');
+ for(const w of ws){
+  if(!['approved','paid','completed','released'].includes(String(w.status||'').toLowerCase()))continue;
+  const key='qx-withdrawal-notified:'+userId+':'+String(w.id||w._id||'')+':'+String(w.status);
+  if(sessionStorage.getItem(key))continue;
+  sessionStorage.setItem(key,'1');
+  const note=document.createElement('div');note.className='qx-approved-toast';
+  note.innerHTML='<strong>Withdrawal status updated</strong><p>Your withdrawal has been marked '+esc(String(w.status))+'. Check payment history for details. No additional deposit is required to release an eligible withdrawal.</p><button type="button">OK</button>';
+  note.querySelector('button').onclick=()=>note.remove();document.body.appendChild(note);
+  break;
+ }
+}
+
 // Wire withdrawal, payment history, support and trade history to existing backend.
 const oldOpenModal=openModal;
 openModal=function(type){
@@ -508,7 +527,7 @@ openModal=function(type){
  }
  if(type==='trades'){oldOpenModal(type);document.getElementById('modalBody').innerHTML=backendTrades.slice(0,50).map(t=>`<div class="dataitem">${esc(t.symbol)} · ${esc(t.direction)} · ${money(t.amountUSD)} · ${esc(t.status)}</div>`).join('')||'<p>No trades</p>';return}
  if(type==='withdrawal'){
-  oldOpenModal(type);document.getElementById('modalBody').innerHTML='<form id="qxWithdrawal"><label class="field">Amount USD<input name="amountUSD" type="number" min="0.01" step="0.01" required></label><label class="field">Method<select name="method"><option>UPI</option><option>Bank Transfer</option><option>USDT</option></select></label><label class="field">Destination<input name="destination" minlength="3" maxlength="180" required placeholder="Account or wallet destination"></label><button class="wide">Request withdrawal</button></form>';document.getElementById('qxWithdrawal').onsubmit=async e=>{e.preventDefault();const f=e.target;const b={amountUSD:Number(f.elements.amountUSD.value),method:f.elements.method.value,destination:f.elements.destination.value};try{await request('/me/withdrawals','POST',b);notify('Withdrawal request submitted');await loadOverview();closeModal()}catch(err){notify(err.message)}};return;
+  oldOpenModal(type);document.getElementById('modalBody').innerHTML=qxOptionalTopupHTML()+'<form id="qxWithdrawal"><label class="field">Amount USD<input name="amountUSD" type="number" min="0.01" step="0.01" required></label><label class="field">Method<select name="method"><option>UPI</option><option>Bank Transfer</option><option>USDT</option></select></label><label class="field">Destination<input name="destination" minlength="3" maxlength="180" required placeholder="Account or wallet destination"></label><button class="wide">Request withdrawal</button></form>';document.getElementById('qxWithdrawal').onsubmit=async e=>{e.preventDefault();const f=e.target;const b={amountUSD:Number(f.elements.amountUSD.value),method:f.elements.method.value,destination:f.elements.destination.value};try{await request('/me/withdrawals','POST',b);notify('Withdrawal request submitted');await loadOverview();closeModal()}catch(err){notify(err.message)}};return;
  }
  if(type==='support'||type==='help'){
   oldOpenModal(type);document.getElementById('modalBody').innerHTML='<form id="qxTicket"><label class="field">Subject<input name="subject" minlength="3" maxlength="120" required></label><label class="field">Message<textarea name="message" minlength="3" maxlength="2000" required style="width:100%;min-height:110px;background:#222838;color:white;padding:10px"></textarea></label><button class="wide">Send support ticket</button></form>';document.getElementById('qxTicket').onsubmit=async e=>{e.preventDefault();const f=e.target;try{await request('/me/tickets','POST',{subject:f.elements.subject.value,message:f.elements.message.value});notify('Support ticket submitted');await loadOverview();closeModal()}catch(err){notify(err.message)}};return;
@@ -544,6 +563,7 @@ function localDemoSettle(){
   const exit=prices[t.asset]??t.entry;
   const signed=(exit-t.entry)*(t.direction==='Buy'?1:-1);
   t.status=signed>0?'Won':signed<0?'Lost':'Draw';
+  if(signed>0)qxWinToast(t.amount*.8,t.asset);
   balance+=signed>0?t.amount*1.8:signed===0?t.amount:0;
   changed=true;
  }
