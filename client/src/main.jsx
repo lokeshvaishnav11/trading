@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
+import "./style.css";
 const API = "/api";
 const C = {
   bg: "#080e18",
@@ -132,7 +133,7 @@ function LiveTradingChart({
     height: 560
   });
 
-  const [spacing, setSpacing] = useState(15);
+  const [spacing, setSpacing] = useState(13);
   const [scrollOffset, setScrollOffset] = useState(0);
 
   const spacingRef = useRef(spacing);
@@ -228,7 +229,7 @@ function LiveTradingChart({
   };
 
   const resetChart = () => {
-    setSpacing(15);
+    setSpacing(13);
     setScrollOffset(0);
     scrollRef.current = 0;
     scaleRef.current = null;
@@ -1542,33 +1543,7 @@ setConnected(
       color: C.text,
       fontFamily: "Inter, Arial, sans-serif"
     }}>
-      <style>{`
-        @media (max-width: 600px) {
-          .qx-top { min-height: 46px !important; height: 46px !important; padding: 4px 10px !important; gap: 7px !important; }
-          .qx-balance { font-size: 12px !important; padding: 7px 10px !important; min-height: 34px !important; }
-          .qx-bell { min-width: 35px !important; height: 34px !important; font-size: 16px !important; }
-          .qx-deposit { padding: 8px 14px !important; min-height: 34px !important; font-size: 13px !important; }
-          .qx-bonus { min-height: 27px !important; padding: 5px 10px !important; margin: 3px 9px !important; font-size: 12px !important; border-radius: 22px !important; }
-          .qx-chart-area { height: 52svh !important; min-height: 390px !important; max-height: 610px !important; }
-          .qx-chart-meta { top: 8px !important; font-size: 11px !important; }
-          .qx-chart-meta button { width: 35px !important; height: 35px !important; padding: 4px !important; }
-          .qx-trade-panel { padding: 9px 10px 10px !important; }
-          .qx-pair-row { min-height: 30px !important; margin-bottom: 8px !important; }
-          .qx-pair { font-size: 12px !important; padding: 5px 0 !important; }
-          .qx-pending { font-size: 10px !important; }
-          .qx-fields { gap: 10px !important; margin: 7px 0 !important; }
-          .qx-field { min-height: 52px !important; font-size: 12px !important; }
-          .qx-field > span { font-size: 12px !important; }
-          .qx-timer, .qx-invest { min-height: 44px !important; height: 44px !important; font-size: 15px !important; }
-          .qx-invest input { font-size: 15px !important; }
-          .qx-invest button { width: 28px !important; height: 28px !important; font-size: 18px !important; padding: 0 !important; }
-          .qx-payout { font-size: 12px !important; margin: 6px 0 !important; }
-          .qx-timer-disclaimer { font-size: 10px !important; line-height: 1.25 !important; margin: 3px 0 7px !important; }
-          .qx-actions { gap: 10px !important; margin-top: 7px !important; }
-          .qx-buy, .qx-sell { height: 46px !important; min-height: 46px !important; font-size: 17px !important; padding: 8px 13px !important; }
-          .qx-history { font-size: 13px !important; }
-        }
-      `}</style>
+
        <header className="qx-top">
          <button className="qx-balance" onClick={() => setAccountMenu(v=>!v)}><span className="qx-plane">➤</span><span className="qx-live">{accountMode === "live" ? "LIVE" : "DEMO"}</span><strong>${fmt(accountMode === "live" ? user.balance : demoBalance)}</strong><span>⌄</span></button>
          <button className="qx-bell" onClick={() => setPage("Support")}>♧ <span className="qx-count">2</span></button>
