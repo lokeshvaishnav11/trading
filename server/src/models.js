@@ -296,3 +296,24 @@ export const MarketSchedule = model(
   marketScheduleSchema
 
 );
+
+// Independent admin notes. Never used by chart generation or trade settlement.
+const directionNoteSchema = new Schema({
+  date: {type:String,required:true,match:/^\d{4}-\d{2}-\d{2}$/},
+  symbol: {type:String,required:true,enum:['EUR/USD','GBP/USD','BTC/USD']},
+  minute: {type:Number,required:true,min:420,max:1430},
+  direction: {type:String,required:true,enum:['UP','DOWN']},
+  updatedBy: {type:Schema.Types.ObjectId,ref:'User'}
+},{timestamps:true});
+directionNoteSchema.index({date:1,symbol:1,minute:1},{unique:true});
+export const DirectionNote = model('DirectionNote',directionNoteSchema);
+
+// Date-independent, admin-only daily direction preferences. No trading consumer.
+const minuteDirectionSchema = new Schema({
+  symbol:{type:String,required:true,enum:['EUR/USD','GBP/USD','BTC/USD']},
+  minute:{type:Number,required:true,min:420,max:1430},
+  direction:{type:String,required:true,enum:['UP','DOWN']},
+  updatedBy:{type:Schema.Types.ObjectId,ref:'User'}
+},{timestamps:true});
+minuteDirectionSchema.index({symbol:1,minute:1},{unique:true});
+export const MinuteDirection = model('MinuteDirection',minuteDirectionSchema);

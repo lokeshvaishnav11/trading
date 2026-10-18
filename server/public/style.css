@@ -265,3 +265,30 @@
 
 .tradesbox{display:none!important}
 .qx-win-toast{position:fixed;z-index:99999;left:50%;top:84px;transform:translate(-50%,-22px);opacity:0;pointer-events:none;display:flex;align-items:center;gap:14px;min-width:280px;max-width:calc(100vw - 32px);padding:16px 22px;border-radius:13px;background:linear-gradient(115deg,#107a45,#16aa5a);color:white;box-shadow:0 12px 36px #001b1380;transition:transform .3s ease,opacity .3s ease;font:14px Arial,sans-serif}.qx-win-toast.show{opacity:1;transform:translate(-50%,0)}.qx-win-toast strong{font-size:17px}.qx-win-toast .qx-win-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#ffffff29;font-size:26px;font-weight:bold}@media(max-width:650px){.qx-win-toast{top:70px;width:calc(100vw - 28px)}}
+
+.qx-latest-chart{position:absolute;right:75px;bottom:38px;z-index:8;border:1px solid #52657c;border-radius:7px;background:#283447;color:#fff;padding:5px 9px;font-size:12px;opacity:.92}
+
+/* Compact spacing below Buy/Sell buttons */
+.tradepanel .buttons{margin-bottom:0!important}
+.tradepanel .tradebutton{margin-bottom:0!important}
+.tradepanel .tradesbox{margin-top:5px!important;padding-top:5px!important}
+
+/* Mobile order ticket: eliminate unused space below Buy/Sell, keep bottom nav visible.
+   Use one viewport budget: header + chart + order panel + bottom navigation. */
+@media(max-width:760px){
+  html,body{height:100%;overflow:hidden!important}
+  body{padding-bottom:0!important}
+  .layout{height:calc(100dvh - max(38px,4.6dvh) - 54px)!important;min-height:0!important;display:flex!important;flex-direction:column!important;overflow:hidden!important}
+  .center{height:auto!important;min-height:0!important;flex:1 1 auto!important;overflow:hidden!important}
+  .chartarea{min-height:0!important;flex:1 1 auto!important}
+  .tradepanel{height:auto!important;min-height:224px!important;max-height:43dvh!important;flex:0 0 auto!important;display:flex!important;flex-direction:column!important;overflow:visible!important;padding:10px 2.3vw 7px!important}
+  .tradepanel .payout{flex:0 0 auto!important;margin:10px 0 9px!important}
+  .tradepanel .buttons{margin-top:0!important;margin-bottom:0!important;flex:none!important}
+  .tradepanel .tradebutton{margin-bottom:0!important}
+  .mobile-nav{height:54px!important;min-height:54px!important;flex:0 0 54px!important;margin:0!important;padding:0!important}
+}
+@media(max-width:760px) and (max-height:680px){
+  .tradepanel{min-height:205px!important;padding-top:6px!important}
+  .tradepanel .inputwrap{height:47px!important;min-height:47px!important}
+  .tradepanel .tradebutton{height:44px!important;min-height:44px!important}
+}

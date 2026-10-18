@@ -10,16 +10,87 @@ function renderTimerChoices(){ $('timerTabTimer').classList.toggle('selected',ti
 function manualTimer(){const entered=prompt('Enter duration (MM:SS or HH:MM:SS)',timerText(Number($('duration').value)));if(entered===null)return;const parts=entered.trim().split(':').map(Number);if(parts.some(x=>!Number.isInteger(x)||x<0)||parts.length<2||parts.length>3){alert('Use MM:SS or HH:MM:SS');return}let secs=parts.reduce((acc,x)=>acc*60+x,0);if(secs<1||secs>86400){alert('Choose between 1 second and 24 hours');return}setTradeTimer(secs)}
 document.addEventListener('pointerdown',e=>{const p=$('timerPicker'),trigger=$('timerTrigger');if(p&&!p.hidden&&!p.contains(e.target)&&!trigger.contains(e.target)){p.hidden=true;trigger.setAttribute('aria-expanded','false')}});
 
-const $=id=>document.getElementById(id),prices={'GBP/USD':1.32436,'EUR/USD':1.08450,'BTC/USD':67480,'ETH/USD':3450,'USD/JPY':149.830},steps={'GBP/USD':.00015,'EUR/USD':.00012,'BTC/USD':30,'ETH/USD':3,'USD/JPY':.02};let asset='GBP/USD',candles=[],zoom=1,trades=[],balance=0,seq=0;let chartPan=0;
+const $=id=>document.getElementById(id),prices={'GBP/USD':1.32436,'EUR/USD':1.08450,'BTC/USD':67480,'ETH/USD':3450,'USD/JPY':149.830},steps={'GBP/USD':.00015,'EUR/USD':.00012,'BTC/USD':30,'ETH/USD':3,'USD/JPY':.02};let asset='GBP/USD',candles=[],zoom=1,trades=[],balance=0,seq=0;let chartPan=0;let qxHistoryOffset=0;let qxHistoryBusy=false;
 let qxMode='live',qxLiveBalance=0,qxDemoBalance=10000;
 function toggleAccountMenu(e){if(e)e.stopPropagation();const m=document.getElementById('qxAccountMenu');m.classList.toggle('open');updateAccountMenu()}
 function closeAccountMenu(){document.getElementById('qxAccountMenu')?.classList.remove('open')}
-function updateAccountMenu(){const demo=qxMode==='demo';document.getElementById('qxModeLabel').textContent=demo?'➤ DEMO':'➤ LIVE';document.getElementById('qxLiveRadio').checked=!demo;document.getElementById('qxDemoRadio').checked=demo;document.getElementById('qxLiveMoney').textContent=cash(qxLiveBalance);document.getElementById('qxDemoMoney').textContent=cash(qxDemoBalance);document.getElementById('qxMenuEmail').textContent=document.getElementById('qxProfileEmail')?.textContent||'Account email';document.getElementById('qxMenuId').textContent=document.getElementById('qxProfileId')?.textContent||'—'}
-function switchAccountMode(mode){if(qxMode===mode){closeAccountMenu();return}if(trades.some(t=>t.status==='Open')){alert('Wait until open trades finish before switching accounts.');return}if(qxMode==='demo')qxDemoBalance=balance;else qxLiveBalance=balance;qxMode=mode;balance=mode==='demo'?qxDemoBalance:qxLiveBalance;trades=[];render();closeAccountMenu()}
+// function updateAccountMenu(){const demo=qxMode==='demo';document.getElementById('qxModeLabel').textContent=demo?'➤ DEMO':'➤ LIVE';document.getElementById('qxLiveRadio').checked=!demo;document.getElementById('qxDemoRadio').checked=demo;document.getElementById('qxLiveMoney').textContent=cash(qxLiveBalance);document.getElementById('qxDemoMoney').textContent=cash(qxDemoBalance);document.getElementById('qxMenuEmail').textContent=document.getElementById('qxProfileEmail')?.textContent||'Account email';document.getElementById('qxMenuId').textContent=document.getElementById('qxProfileId')?.textContent||'—'}
+function updateAccountMenu() {
+  const demo = qxMode === 'demo';
+
+  document.getElementById('qxModeLabel').textContent =
+    demo ? '➤ DEMO' : '➤ LIVE';
+
+  document.getElementById('qxLiveRadio').checked = !demo;
+  document.getElementById('qxDemoRadio').checked = demo;
+
+  document.getElementById('qxLiveMoney').textContent =
+    cash(qxLiveBalance);
+
+  document.getElementById('qxDemoMoney').textContent =
+    cash(qxDemoBalance);
+
+  const user = window.qxCurrentUser || {};
+
+  document.getElementById('qxMenuEmail').textContent =
+    user.email || 'Account email';
+
+  document.getElementById('qxMenuId').textContent =
+    user.id || user._id || '—';
+}
+
+function switchAccountMode(mode) {
+  if (!['live', 'demo'].includes(mode)) return;
+
+  if (qxMode === mode) {
+    closeAccountMenu();
+    return;
+  }
+
+  if (trades.some(t => t.status === 'Open')) {
+    alert('Wait until open demo trades finish.');
+    return;
+  }
+
+  qxMode = mode;
+
+  balance = mode === 'demo'
+    ? qxDemoBalance
+    : qxLiveBalance;
+
+  document.getElementById('balance').textContent =
+    cash(balance);
+
+  updateAccountMenu();
+  closeAccountMenu();
+}
+
 function resetDemoBalance(){if(qxMode==='demo'&&trades.some(t=>t.status==='Open')){alert('Wait for demo trades to finish first.');return}qxDemoBalance=10000;if(qxMode==='demo'){balance=10000;trades=[];render()}updateAccountMenu()}
 document.addEventListener('click',e=>{const m=document.getElementById('qxAccountMenu');if(m&&!m.contains(e.target)&&!e.target.closest('.header-right .pill'))closeAccountMenu()});
 function cash(n){return '$'+Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}function digits(){return asset.includes('BTC')||asset.includes('ETH')?2:asset.includes('JPY')?3:5}function pricefmt(p){return p.toFixed(digits())}function rnd(){return Math.random()-.5}
 function init(){chartPan=0;activeCandleMinute=Math.floor(Date.now()/60000);candles=[];let p=prices[asset]+steps[asset]*3;for(let i=0;i<120;i++){let o=p;p=Math.max(.001,p+rnd()*steps[asset]*3);candles.push({o,c:p,h:Math.max(o,p)+Math.random()*steps[asset],l:Math.min(o,p)-Math.random()*steps[asset]})}prices[asset]=p;draw()}
+// Smooth, price-following vertical viewport. Uses the latest visible candles,
+// never fixed global price boundaries. Shared by price axis and overlays.
+let qxViewport=null;
+function qxChartRange(view, current, smooth=true){
+ const vals=view.flatMap(b=>[Number(b.h),Number(b.l)]).filter(Number.isFinite);
+ if(Number.isFinite(current))vals.push(current);
+ if(!vals.length)return {lo:0,hi:1};
+ const rawLo=Math.min(...vals),rawHi=Math.max(...vals);
+ const typical=steps[asset]||Math.max(Math.abs(current)*0.0001,0.00001);
+ const span=Math.max(rawHi-rawLo,typical*5,Math.abs(current)*0.000001);
+ const pad=span*0.14;
+ const desiredLo=rawLo-pad,desiredHi=rawHi+pad;
+ if(!smooth||chartPan>0)return {lo:desiredLo,hi:desiredHi};
+ if(!qxViewport||qxViewport.asset!==asset){qxViewport={asset,lo:desiredLo,hi:desiredHi};}
+ else {
+  // Expand immediately so current prices never clip; contract smoothly.
+  const alpha=0.12;
+  qxViewport.lo=desiredLo<qxViewport.lo?desiredLo:qxViewport.lo+(desiredLo-qxViewport.lo)*alpha;
+  qxViewport.hi=desiredHi>qxViewport.hi?desiredHi:qxViewport.hi+(desiredHi-qxViewport.hi)*alpha;
+ }
+ return {lo:qxViewport.lo,hi:qxViewport.hi};
+}
 function draw(){
 const el=$('chart'),r=el.getBoundingClientRect(),d=window.devicePixelRatio||1,w=r.width,h=r.height;
 if(w<20||h<20||!candles.length)return;
@@ -27,22 +98,23 @@ el.width=Math.round(w*d);el.height=Math.round(h*d);
 const c=el.getContext('2d');c.setTransform(d,0,0,d,0,0);
 c.fillStyle='#1c2230';c.fillRect(0,0,w,h);
 const right=window.innerWidth<=760?65:72,top=16,bottom=34,left=10,ww=w-left-right,hh=h-top-bottom;
-const count=Math.max(5,Math.min(candles.length,Math.round(14/zoom)));
+const count=Math.max(5,Math.min(candles.length,Math.round((window.innerWidth<=760?20:27)/zoom)));
 chartPan=Math.max(0,Math.min(chartPan,candles.length-count));
 const view=candles.slice(Math.max(0,candles.length-count-Math.floor(chartPan)),candles.length-Math.floor(chartPan));
-const low0=Math.min(...view.map(x=>x.l)),high0=Math.max(...view.map(x=>x.h)),pad=(high0-low0)*.22||1;
-const low=low0-pad,high=high0+pad,y=p=>top+(high-p)/(high-low)*hh;
+const {lo:low,hi:high}=qxChartRange(view,chartPan>0||qxHistoryOffset>0?NaN:prices[asset]);
+const y=p=>top+(high-p)/(high-low)*hh;
 c.lineWidth=1;c.strokeStyle='#4b5365';c.font=(w<=760?'13px Arial':'12px Arial');
 const priceIntervals=4; // Wider, readable price-axis labels on mobile
 for(let i=0;i<=priceIntervals;i++){let yy=top+i*hh/priceIntervals;c.beginPath();c.moveTo(0,yy+.5);c.lineTo(w,yy+.5);c.stroke();c.fillStyle='#f4f5f8';c.font='11px Arial';c.fillText((high-(high-low)*i/priceIntervals).toFixed(digits()),w-right+5,yy+4)}
 // Wider 4-minute time labels, aligned to the clock and spaced across the chart.
-const axisNow=new Date();axisNow.setSeconds(0,0);axisNow.setMinutes(axisNow.getMinutes()-axisNow.getMinutes()%4);
+const axisNow=new Date(view[view.length-1]?.time || Date.now());axisNow.setSeconds(0,0);
 const timeSteps=4,axisStep=ww/timeSteps;
 c.textAlign='center';c.font='12px Arial';
 for(let i=0;i<=timeSteps;i++){
   const x=left+i*axisStep;
   c.strokeStyle='#4b5365';c.lineWidth=1;c.beginPath();c.moveTo(x+.5,0);c.lineTo(x+.5,h-bottom);c.stroke();
-  const dt=new Date(axisNow.getTime()-(timeSteps-1-i)*4*60000-Math.floor(chartPan)*60000);
+  const idx=Math.max(0,Math.min(view.length-1,Math.round(i*(view.length-1)/timeSteps)));
+  const dt=new Date(view[idx]?.time || axisNow.getTime());
   c.fillStyle='#e1e4ea';
   if(x>=23&&x<=w-right-23)c.fillText(dt.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}),x,h-10);
 }
@@ -51,21 +123,24 @@ c.textAlign='left';
 // the future space to the right stays empty.
 // The solid end-of-trade marker advances smoothly across the future area
 // during each 60-second cycle, then returns to its start for the next cycle.
-const beginX=left+ww*.61;
+const isHistory=qxHistoryOffset>0||chartPan>0;
+const beginX=left+ww*(isHistory?1:.79);
 const cycleProgress=(Date.now()%60000)/60000;
-const endX=left+ww*(.73+.14*cycleProgress);
+const endX=left+ww*(.83+.10*cycleProgress);
 const slot=(beginX-left)/view.length;
-view.forEach((b,i)=>{let x=left+(i+.5)*slot;const color=b.c>=b.o?'#39e85d':'#ff795e';c.strokeStyle=color;c.fillStyle=color;c.lineWidth=1.7;c.beginPath();c.moveTo(x,y(b.h));c.lineTo(x,y(b.l));c.stroke();const bw=Math.max(5,slot*.88);c.fillRect(x-bw/2,Math.min(y(b.o),y(b.c)),bw,Math.max(2,Math.abs(y(b.o)-y(b.c))))});
-const current=prices[asset],yy=y(current);
+view.forEach((b,i)=>{let x=left+(i+.5)*slot;const color=b.c>=b.o?'#39e85d':'#ff795e';c.strokeStyle=color;c.fillStyle=color;c.lineWidth=1.7;c.beginPath();c.moveTo(x,y(b.h));c.lineTo(x,y(b.l));c.stroke();const bw=Math.max(4,Math.min(15,slot*.78));c.fillRect(x-bw/2,Math.min(y(b.o),y(b.c)),bw,Math.max(1,Math.abs(y(b.o)-y(b.c))))});
+const current=(qxHistoryOffset>0||chartPan>0)?view[view.length-1].c:prices[asset],yy=y(current);
 // White dotted horizontal price line
 c.strokeStyle='#f2f4f8';c.lineWidth=2;c.setLineDash([6,5]);c.beginPath();c.moveTo(0,yy);c.lineTo(w,yy);c.stroke();c.setLineDash([]);
 // Two vertical markers, as in the reference
+if(!isHistory){
 c.strokeStyle='#f6f7f9';c.lineWidth=2;c.setLineDash([6,6]);c.beginPath();c.moveTo(beginX,0);c.lineTo(beginX,h-bottom);c.stroke();c.setLineDash([]);
 c.strokeStyle='#b8beca';c.lineWidth=1.5;c.beginPath();c.moveTo(endX,0);c.lineTo(endX,h-bottom);c.stroke();
 c.save();c.globalAlpha=0.42;c.fillStyle='#a6adbc';c.font='normal 12px Arial';c.textAlign='right';c.fillText('Beginning of trade',beginX-12,top+28);c.textAlign='left';c.fillText('End of trade',endX+12,top+28);c.restore();
 c.fillStyle='#adb6c7';c.beginPath();c.moveTo(beginX-15,top+22);c.lineTo(beginX-8,top+18);c.lineTo(beginX-8,top+26);c.fill();c.beginPath();c.moveTo(endX+8,top+22);c.lineTo(endX+15,top+18);c.lineTo(endX+15,top+26);c.fill();
 const remaining=60-new Date().getSeconds();const label='00:'+String(remaining).padStart(2,'0');
 c.fillStyle='#586176';c.fillRect(endX-22,yy-12,44,24);c.fillStyle='#fff';c.font='bold 11px Arial';c.textAlign='center';c.fillText(label,endX,yy+4);c.textAlign='left';
+}
 c.fillStyle='#299ff1';c.beginPath();c.roundRect(w-right,yy-15,right-2,30,14);c.fill();c.fillStyle='white';c.font='bold 11px Arial';c.fillText(pricefmt(current),w-right+5,yy+4);
 }
 // One OHLC candle per real clock minute; update its high/low/close every second.
@@ -108,7 +183,7 @@ chartCanvas.addEventListener('touchend',e=>{if(e.touches.length<2)pinchStartDist
 chartCanvas.addEventListener('touchcancel',()=>{pinchStartDistance=0},{passive:true});
 // Drag left/right to inspect earlier candles; two fingers still pinch-zoom.
 let dragStartX=null,dragStartPan=0,dragPointer=null;
-const panSlot=()=>Math.max(8,(chartCanvas.getBoundingClientRect().width-75)*.61/Math.max(5,Math.round(14/zoom)));
+const panSlot=()=>Math.max(3,(chartCanvas.getBoundingClientRect().width-75)*.79/Math.max(5,Math.round((window.innerWidth<=760?20:27)/zoom)));
 chartCanvas.addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch' && !e.isPrimary)return;
  dragStartX=e.clientX;dragStartPan=chartPan;dragPointer=e.pointerId;
@@ -116,8 +191,13 @@ chartCanvas.addEventListener('pointerdown',e=>{
 });
 chartCanvas.addEventListener('pointermove',e=>{
  if(dragStartX===null||e.pointerId!==dragPointer||pinchStartDistance)return;
- const maxPan=Math.max(0,candles.length-Math.max(5,Math.round(14/zoom)));
- chartPan=Math.max(0,Math.min(maxPan,dragStartPan+(e.clientX-dragStartX)/panSlot()));
+ const maxPan=Math.max(0,candles.length-Math.max(5,Math.round((window.innerWidth<=760?20:27)/zoom)));
+ const desired=dragStartPan+(e.clientX-dragStartX)/panSlot();
+ chartPan=Math.max(0,Math.min(maxPan,desired));
+ if(desired>maxPan+3 && !qxHistoryBusy && qxHistoryOffset<1440){
+  const previous=qxHistoryOffset;qxHistoryBusy=true;qxHistoryOffset=Math.min(1440,previous+45);
+  loadChart().finally(()=>{chartPan=Math.max(0,candles.length-Math.max(5,Math.round((window.innerWidth<=760?20:27)/zoom))-4);dragStartX=null;qxHistoryBusy=false;draw()});
+ } 
  draw();
 });
 function stopChartDrag(e){if(e.pointerId===dragPointer){dragStartX=null;dragPointer=null}}
@@ -128,7 +208,7 @@ chartCanvas.addEventListener('wheel',e=>{
  if(e.shiftKey){chartPan=Math.max(0,Math.min(candles.length-5,chartPan+e.deltaY/panSlot()));draw()}
  else setChartZoom(zoom*Math.exp(-e.deltaY*.002));
 },{passive:false});
-$('asset').onchange=e=>{asset=e.target.value;let rate=asset==='EUR/USD'?80:78;$('sideasset').textContent=asset+' · '+rate+'%';updatePayout();if(window.qxLoadChart)window.qxLoadChart()};function updatePayout(){$('payout').textContent=cash(Math.max(0,Number($('amount').value))*(1.88))}$('amount').oninput=updatePayout;
+$('asset').onchange=e=>{qxHistoryOffset=0;chartPan=0;asset=e.target.value;let rate=asset==='EUR/USD'?80:78;$('sideasset').textContent=asset+' · '+rate+'%';updatePayout();if(window.qxLoadChart)window.qxLoadChart()};function updatePayout(){$('payout').textContent=cash(Math.max(0,Number($('amount').value))*(1.88))}$('amount').oninput=updatePayout;
 const paymentMethods=['LG-Pay','WatchPay','BondPay','USDT Pay'];
 function menuButtons(items){return items.map(s=>'<button class="menubtn" data-qx-onclick="openModal(\&#x27;&#x27;+s.toLowerCase()+&#x27;\&#x27;)">'+s+'　›</button>').join('')}
 function openModal(type){closeAccountMenu();$('overlay').classList.add('visible');let title=type[0].toUpperCase()+type.slice(1),body='';if(type==='menu'){closeModal();toggleMore();return}
@@ -261,10 +341,82 @@ gateTab('login');document.getElementById('authGate').hidden=false;
 ;
 
 function updateQxProfileBadge(){const badge=document.querySelector('.qx-profile-identity .qx-unverified, .qx-profile-identity .qx-complete');if(!badge)return;let data={};try{data=JSON.parse(localStorage.getItem('qx_profile_fields')||'{}')}catch(e){}const complete=['nickname','firstName','lastName','dob','email','country'].every(k=>String(data[k]||'').trim());badge.className=complete?'qx-complete':'qx-unverified';badge.textContent=complete?'✓ Profile Complete':'✖ Not verified'}
-function fillQxProfile(){const f=document.getElementById('qxProfileForm');if(!f)return;let saved={};try{saved=JSON.parse(localStorage.getItem('qx_profile_fields')||'{}')}catch(e){}for(const [k,v] of Object.entries(saved)){if(f.elements[k])f.elements[k].value=v}const email=saved.email||localStorage.getItem('qx_account_email')||'';document.getElementById('qxProfileEmail').textContent=email||'Account email';document.getElementById('qxProfileEmailField').value=email;document.getElementById('qxProfileId').textContent=localStorage.getItem('qx_profile_id')||'—';updateQxProfileBadge()}
-function saveQxProfile(e){e.preventDefault();const f=e.currentTarget,data={};for(const key of ['nickname','firstName','lastName','dob','email','country'])data[key]=f.elements[key].value;localStorage.setItem('qx_profile_fields',JSON.stringify(data));document.getElementById('qxProfileEmail').textContent=data.email;document.getElementById('qxProfileStatus').textContent='Profile saved successfully.';updateQxProfileBadge()}
+function fillQxProfile() {
+  const f = document.getElementById('qxProfileForm');
+  if (!f) return;
 
-;
+  const user = window.qxCurrentUser || {};
+
+  let saved = {};
+  try {
+    saved = JSON.parse(
+      localStorage.getItem('qx_profile_fields') || '{}'
+    );
+  } catch (e) {}
+
+  for (const key of [
+    'nickname',
+    'firstName',
+    'lastName',
+    'dob',
+    'country'
+  ]) {
+    if (f.elements[key]) {
+      f.elements[key].value =
+        saved[key] || user[key] || '';
+    }
+  }
+
+  const email = user.email || '';
+
+  document.getElementById('qxProfileEmail').textContent =
+    email || 'Account email';
+
+  document.getElementById('qxProfileEmailField').value =
+    email;
+
+  document.getElementById('qxProfileId').textContent =
+    user.id || user._id || '—';
+
+  updateQxProfileBadge();
+}
+
+
+
+function saveQxProfile(e) {
+  e.preventDefault();
+
+  const f = e.currentTarget;
+  const user = window.qxCurrentUser || {};
+
+  const data = {};
+
+  for (const key of [
+    'nickname',
+    'firstName',
+    'lastName',
+    'dob',
+    'country'
+  ]) {
+    data[key] = f.elements[key]?.value || '';
+  }
+
+  data.email = user.email || '';
+
+  localStorage.setItem(
+    'qx_profile_fields',
+    JSON.stringify(data)
+  );
+
+  document.getElementById('qxProfileEmail').textContent =
+    data.email || 'Account email';
+
+  document.getElementById('qxProfileStatus').textContent =
+    'Profile saved in this browser.';
+
+  updateQxProfileBadge();
+  updateAccountMenu();
+}
 
 (function(){
 const page=document.getElementById('qxTournamentPage'),content=document.getElementById('qxTournamentContent');let tab='active';
@@ -303,19 +455,37 @@ async function request(path,method='GET',body){
 function notify(message){document.getElementById('qxNoticeText').textContent=String(message);const box=document.getElementById('qxNotice');box.classList.add('show');}
 function esc(x){return String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function money(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
-function getLiveBalance(u){return Number(u?.demoBalance??0)} // Trading is simulated; separate wallet is user.balance
-function getDemoBalance(u){return Number(u?.demoBalance??10000)}
-function syncAccount(){
- if(!account)return;
- qxLiveBalance=getLiveBalance(account);
- qxDemoBalance=getDemoBalance(account);
- if(qxMode==='live')balance=qxLiveBalance;
- document.getElementById('balance').textContent=money(balance);
- document.getElementById('qxMenuEmail').textContent=account.email||'';
- document.getElementById('qxMenuId').textContent=account.id||account._id||'—';
- document.getElementById('qxLiveMoney').textContent=money(qxLiveBalance);
- document.getElementById('qxDemoMoney').textContent=money(qxDemoBalance);
- updateAccountMenu();
+function getLiveBalance(u) {
+  return Number(u?.balance ?? 0);
+}
+
+function getDemoBalance(u) {
+  return Number(u?.demoBalance ?? 10000);
+}
+function syncAccount() {
+  if (!account) return;
+
+  window.qxCurrentUser = account;
+
+  // Always take both balances from backend
+  qxLiveBalance = getLiveBalance(account);
+  qxDemoBalance = getDemoBalance(account);
+
+  // Show only selected account balance
+  balance = qxMode === 'demo'
+    ? qxDemoBalance
+    : qxLiveBalance;
+
+  document.getElementById('balance').textContent =
+    money(balance);
+
+  document.getElementById('qxMenuEmail').textContent =
+    account.email || 'Account email';
+
+  document.getElementById('qxMenuId').textContent =
+    account.id || account._id || '—';
+
+  updateAccountMenu();
 }
 let qxSeenStatuses=new Map(),qxSeenInitialized=false;
 function qxWinToast(profit,symbol){
@@ -360,31 +530,33 @@ async function loadChart(){
  loadingChart=true;
  const symbol=asset;
  try{
-  const data=await request('/trading/chart?symbol='+encodeURIComponent(symbol));
+  const chartPath='/trading/chart';
+  const data=await request(chartPath+'?symbol='+encodeURIComponent(symbol)+'&offsetMinutes='+Math.max(0,Math.floor(qxHistoryOffset)));
   if(asset!==symbol)return;
   if(!Array.isArray(data.candles))throw Error('Invalid candle data from server');
-  const serverCandles=data.candles.map(c=>({o:Number(c.open),h:Number(c.high),l:Number(c.low),c:Number(c.close),time:Number(c.time)})).filter(c=>[c.o,c.h,c.l,c.c].every(Number.isFinite));
-  if(serverCandles.length){candles=serverCandles;window.qxChartFeed='server';const feed=document.querySelector('.toolbar small');if(feed)feed.textContent='● Server-scheduled simulated quotes · 1m candles';}
-  else{window.qxChartFeed='simulation';if(!candles.length)init();updateFallbackCandle();}
+  // One unique OHLC candle for each exact 60-second UTC bucket. Never append
+  // candles on 3-second quote polls: only update the current minute's OHLC.
+  const minuteBars=new Map();
+  for(const raw of data.candles){
+   const time=Math.floor(Number(raw.time)/60000)*60000;
+   const o=Number(raw.open),h=Number(raw.high),l=Number(raw.low),c=Number(raw.close);
+   if(!Number.isFinite(time)||![o,h,l,c].every(Number.isFinite))continue;
+   minuteBars.set(time,{time,o,h:Math.max(h,o,c),l:Math.min(l,o,c),c});
+  }
+  const serverCandles=[...minuteBars.values()].sort((a,b)=>a.time-b.time);
+  // A valid chart has exactly one timestamp per minute; repeated fetches
+  // replace OHLC values in place rather than adding another candle.
+  if(serverCandles.length){candles=serverCandles;window.qxChartFeed='server';const feed=document.querySelector('.toolbar small');if(feed)feed.textContent='● SIMULATED random chart · not real market data';}
+  else{window.qxChartFeed='unavailable';const feed=document.querySelector('.toolbar small');if(feed)feed.textContent='● Server quotes unavailable · chart paused';}
   const v=Number(data.currentPrice);
-  if(data.currentPrice!==null&&data.currentPrice!==undefined&&Number.isFinite(v)&&v>0)prices[symbol]=v;
+  if(qxHistoryOffset===0&&data.currentPrice!==null&&data.currentPrice!==undefined&&Number.isFinite(v)&&v>0)prices[symbol]=v;
   latestServerTime=Number(data.serverTime)||Date.now();
   latestCandleEnd=Number(data.nextCandleAt)||0;
   lastServerReceived=Date.now();
   draw();
- }catch(e){console.warn('Chart:',e.message);window.qxChartFeed='simulation';if(!candles.length)init();updateFallbackCandle();}finally{loadingChart=false}
+ }catch(e){console.warn('Chart:',e.message);window.qxChartFeed='unavailable';const feed=document.querySelector('.toolbar small');if(feed)feed.textContent='● Server connection lost · chart paused';}finally{loadingChart=false}
 }
-function updateFallbackCandle(){
- const now=Date.now(),minute=Math.floor(now/60000),last=candles[candles.length-1];
- if(!last)return;
- if(window.qxFallbackMinute!==minute){window.qxFallbackMinute=minute;
-  if(candles.length>0&&last.time!==minute*60000){const o=last.c;candles.push({o,c:o,h:o,l:o,time:minute*60000});if(candles.length>120)candles.shift();}}
- const bar=candles[candles.length-1];const step=steps[asset]||0.00012;
- const next=Math.max(0.00001,bar.c+(Math.random()-.5)*step*.55);
- bar.c=next;bar.h=Math.max(bar.h,next);bar.l=Math.min(bar.l,next);prices[asset]=next;
- const feed=document.querySelector('.toolbar small');if(feed)feed.textContent='● Simulated fallback quotes · server schedule unavailable';
- draw();
-}
+function updateFallbackCandle(){ /* Offline: keep last verified simulation candle frozen. */ }
 window.qxLoadChart=loadChart;
 // Preserve the original chart drawing, but use backend candle timing instead of the local timer.
 const originalDraw=draw;
@@ -394,15 +566,16 @@ draw=function(){
  // Countdown drawn at same line as original HTML, synchronized with server.
  const canvas=document.getElementById('chart'),ctx=canvas.getContext('2d');
  const d=window.devicePixelRatio||1,w=canvas.clientWidth,h=canvas.clientHeight;
- if(w<30||h<30||!supported.has(asset))return;
+ if(w<30||h<30||!supported.has(asset)||qxHistoryOffset>0||chartPan>0)return;
  const right=window.innerWidth<=760?65:72,left=10,ww=w-left-right;
- const endX=left+ww*(.73+.14*((Date.now()%60000)/60000));
+ const endX=left+ww*(.83+.10*((Date.now()%60000)/60000));
  const current=prices[asset];
- const count=Math.max(5,Math.min(candles.length,Math.round(14/zoom)));
+ const count=Math.max(5,Math.min(candles.length,Math.round((window.innerWidth<=760?20:27)/zoom)));
  const view=candles.slice(Math.max(0,candles.length-count-Math.floor(chartPan)),candles.length-Math.floor(chartPan));
  if(!view.length)return;
- const lo=Math.min(...view.map(c=>c.l)),hi=Math.max(...view.map(c=>c.h)),pad=(hi-lo)*.22||1;
- const yy=16+(hi+pad-current)/(hi-lo+pad*2)*(h-50);
+ const {lo,hi}=qxChartRange(view,chartPan>0||qxHistoryOffset>0?NaN:current,false);
+ const range=qxViewport&&chartPan===0&&qxViewport.asset===asset?qxViewport:{lo,hi};
+ const yy=16+(range.hi-current)/(range.hi-range.lo)*(h-50);
  const serverNow=latestServerTime+(Date.now()-lastServerReceived);
  const target=latestCandleEnd>serverNow?latestCandleEnd:Math.floor(serverNow/60000)*60000+60000;
  const seconds=Math.max(1,Math.ceil((target-serverNow)/1000));
@@ -472,6 +645,7 @@ switchAccountMode=function(mode){
  if(mode==='demo'){qxLiveBalance=getLiveBalance(account);qxMode='demo';balance=qxDemoBalance}
  else{qxDemoBalance=balance;qxMode='live';balance=getLiveBalance(account)}
  document.getElementById('balance').textContent=money(balance);updateAccountMenu();renderBackendTrades();closeAccountMenu();
+ qxHistoryOffset=0;chartPan=0;loadChart();
 };
 resetDemoBalance=function(){qxDemoBalance=10000;if(qxMode==='demo'){balance=10000;trades=[];document.getElementById('balance').textContent=money(balance);renderBackendTrades()}updateAccountMenu()};
 // Keep the exact payment-method UI, but submit real backend deposit REQUESTS (not a payment gateway).
@@ -577,7 +751,7 @@ async function boot(){
  }
  updatePayout();
  setInterval(()=>{document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-GB',{timeZone:'Asia/Kolkata'});localDemoSettle()},1000);
- setInterval(loadChart,1000);
+ setInterval(()=>{if(!qxHistoryBusy && !document.hidden)loadChart()},3000);
  setInterval(loadOverview,3000);
  requestAnimationFrame(animate);
 }
@@ -684,15 +858,23 @@ draw=function(){_tradeLineDraw();
  if(!active.length||!candles.length)return;
  const el=document.getElementById('chart'),ctx=el.getContext('2d');const w=el.clientWidth,h=el.clientHeight,d=window.devicePixelRatio||1;
  const top=16,bottom=34,right=window.innerWidth<=760?65:72;
- const count=Math.max(5,Math.min(candles.length,Math.round(14/zoom)));
+ const count=Math.max(5,Math.min(candles.length,Math.round((window.innerWidth<=760?20:27)/zoom)));
  const view=candles.slice(Math.max(0,candles.length-count-Math.floor(chartPan)),candles.length-Math.floor(chartPan));
  if(!view.length)return;
- const low0=Math.min(...view.map(c=>c.l)),high0=Math.max(...view.map(c=>c.h)),pad=(high0-low0)*.22||1;
- const lo=low0-pad,hi=high0+pad;
+ const {lo,hi}=qxChartRange(view,prices[asset],false);
+ const range=qxViewport&&chartPan===0&&qxViewport.asset===asset?qxViewport:{lo,hi};
  ctx.save();ctx.setTransform(d,0,0,d,0,0);
  active.slice(-5).forEach(t=>{const p=Number(t.entryPrice);if(!Number.isFinite(p))return;
- const y=top+(hi-p)/(hi-lo)*(h-top-bottom);if(y<top||y>h-bottom)return;
+ const y=top+(range.hi-p)/(range.hi-range.lo)*(h-top-bottom);if(y<top||y>h-bottom)return;
  ctx.strokeStyle=t.direction==='buy'?'#34d889':'#ff8d6e';ctx.lineWidth=2;ctx.setLineDash([8,4]);ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(w-right,y);ctx.stroke();ctx.setLineDash([]);
  ctx.fillStyle=ctx.strokeStyle;ctx.fillRect(4,y-12,Math.min(165,w-right-8),18);ctx.fillStyle='#091723';ctx.font='bold 11px Arial';
  const secs=Math.max(0,Math.ceil((new Date(t.expiresAt).getTime()-Date.now())/1000));ctx.fillText((t.direction==='buy'?'▲ BUY ':'▼ SELL ')+p.toFixed(digits())+'  '+timerText(secs),8,y+1);});ctx.restore();
 };
+
+// Return to latest candles without refreshing the page.
+window.qxChartLatest=()=>{qxHistoryOffset=0;chartPan=0;loadChart()};
+const qxLatestButton=document.createElement('button');
+qxLatestButton.type='button';qxLatestButton.textContent='↪ Latest';
+qxLatestButton.className='qx-latest-chart';
+qxLatestButton.addEventListener('click',window.qxChartLatest);
+document.getElementById('chart')?.parentElement?.appendChild(qxLatestButton);
