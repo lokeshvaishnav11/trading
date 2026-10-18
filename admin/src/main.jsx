@@ -62,7 +62,7 @@ function ScheduleEditor() {
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState('');
   const [dirty,setDirty]=useState(false);
-  const path='/admin/minute-directions/'+encodeURIComponent(symbol);
+  const path = '/admin/minute-directions?symbol=' + encodeURIComponent(symbol);
   const clock=n=>`${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;
   const reload=async()=>{
     setBusy(true);setNotice('');
