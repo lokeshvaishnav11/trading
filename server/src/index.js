@@ -691,34 +691,79 @@ app.get('/api/trading/prices',auth,asyncH(async(req,res)=>{
   priceSources:Object.fromEntries(Object.keys(prices).map(k=>[k,'random-simulation']))});
 }));
 // Daily admin-only direction notes; not consumed by chart or trade settlement.
-app.get('/api/admin/minute-directions/:symbol',auth,admin,asyncH(async(req,res)=>{
-  const symbol=req.params.symbol;
+// Daily admin-only direction notes
+// GET /api/admin/minute-directions?symbol=EUR%2FUSD
+
+app.get('/api/admin/minute-directions', auth, admin, asyncH(async (req, res) => {
+  const symbol = String(req.query.symbol || '');
+
   validateSymbol(symbol);
-  const rows=await MinuteDirection.find({symbol}).select('minute direction -_id').sort({minute:1}).lean();
-  res.set('Cache-Control','no-store');
-  res.json({symbol,rows});
+
+  const rows = await MinuteDirection.find({ symbol })
+    .select('minute direction -_id')
+    .sort({ minute: 1 })
+    .lean();
+
+  res.set('Cache-Control', 'no-store');
+  res.json({ symbol, rows });
 }));
-app.put('/api/admin/minute-directions/:symbol',auth,admin,asyncH(async(req,res)=>{
-  const symbol=req.params.symbol;
+
+// PUT /api/admin/minute-directions?symbol=EUR%2FUSD
+
+app.put('/api/admin/minute-directions', auth, admin, asyncH(async (req, res) => {
+  const symbol = String(req.query.symbol || '');
+
   validateSymbol(symbol);
-  const items=req.body?.rows;
-  if(!Array.isArray(items)||items.length>102)throw fail('Invalid rows');
-  const seen=new Set();
-  for(const item of items){
-    if(!Number.isInteger(item.minute)||item.minute<420||item.minute>1430||item.minute%10!==0||!['UP','DOWN'].includes(item.direction)||seen.has(item.minute))throw fail('Invalid time or direction');
+
+  const items = req.body?.rows;
+
+  if (!Array.isArray(items) || items.length > 102) {
+    throw fail('Invalid rows');
+  }
+
+  const seen = new Set();
+
+  for (const item of items) {
+    if (
+      !Number.isInteger(item.minute) ||
+      item.minute < 420 ||
+      item.minute > 1430 ||
+      item.minute % 10 !== 0 ||
+      !['UP', 'DOWN'].includes(item.direction) ||
+      seen.has(item.minute)
+    ) {
+      throw fail('Invalid time or direction');
+    }
+
     seen.add(item.minute);
   }
-  await mongoose.connection.transaction(async session=>{
-    const operations=items.map(item=>({updateOne:{
-      filter:{symbol,minute:item.minute},
-      update:{$set:{direction:item.direction,updatedBy:req.user._id}},
-      upsert:true
-    }}));
-    if(operations.length)await MinuteDirection.bulkWrite(operations,{session});
-    await MinuteDirection.deleteMany({symbol,minute:{$nin:[...seen]}},{session});
+
+  await mongoose.connection.transaction(async (session) => {
+    const operations = items.map((item) => ({
+      updateOne: {
+        filter: { symbol, minute: item.minute },
+        update: {
+          $set: {
+            direction: item.direction,
+            updatedBy: req.user._id
+          }
+        },
+        upsert: true
+      }
+    }));
+
+    if (operations.length) {
+      await MinuteDirection.bulkWrite(operations, { session });
+    }
+
+    await MinuteDirection.deleteMany(
+      { symbol, minute: { $nin: [...seen] } },
+      { session }
+    );
   });
-  res.set('Cache-Control','no-store');
-  res.json({ok:true,count:items.length});
+
+  res.set('Cache-Control', 'no-store');
+  res.json({ ok: true, count: items.length });
 }));
 // Retired date-based direction notes are kept in their old collection for archival purposes.
 // Retain old schedule records only to settle previously opened trades.
