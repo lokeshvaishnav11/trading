@@ -942,7 +942,7 @@ function App() {
 
   const approveDeposit = async (deposit) => {
 
-    const confirmed = window\.confirm(
+    const confirmed = window.confirm(
 
       `Confirm that payment of $${deposit.amountUSD} ` +
 
@@ -996,7 +996,7 @@ function App() {
 
   const remove = async (id) => {
 
-    if (!window\.confirm("Delete this configuration record?")) {
+    if (!window.confirm("Delete this configuration record?")) {
 
       return;
 
