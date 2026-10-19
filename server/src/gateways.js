@@ -1213,15 +1213,75 @@ export function installGateways(app,auth,asyncH){
  }));
 
  app.get('/api/payments/rate',asyncH(async(req,res)=>{try{const r=await rate();res.json({rateINR:r,currency:'USDT',asOf:new Date(rateCache.at).toISOString()})}catch(err){res.status(503).json({error:'Live USDT/INR rate unavailable. Please retry.'})}}));
- app.post('/api/payments/create',auth,asyncH(async(req,res)=>{
-  const gateway=String(req.body.gateway||'');const amount=Number(req.body.amountINR);
-  if(!['lg','watch','bond','usdt'].includes(gateway)||!Number.isFinite(amount)||amount<100||amount>100000||Math.round(amount*100)!==amount*100) return res.status(400).json({error:'Invalid gateway or INR amount (min ₹100)'});
-  const r=await rate(),orderId=`QX${Date.now()}${crypto.randomBytes(5).toString('hex')}`;
-  const creditUSDT=Math.floor(amount/r*1e6)/1e6;
-  const payment=await Payment.create({user:req.user._id,gateway,orderId,amountINR:amount,rateINR:r,creditUSDT});
-  try{const paymentUrl=await createProvider(gateway,orderId,amount,req.ip);res.json({orderId,paymentUrl,rateINR:r,creditUSDT,status:'pending'})}
-  catch(e){await Payment.updateOne({_id:payment._id},{$set:{status:'failed'}});res.status(502).json({error:e.message})}
- }));
+
+app.post('/api/payments/create', auth, asyncH(async (req, res) => {
+  const gateway = String(req.body.gateway || '');
+  const amount = Number(req.body.amountINR);
+
+  if (!['lg', 'watch', 'bond', 'usdt'].includes(gateway)) {
+    return res.status(400).json({ error: 'Invalid gateway' });
+  }
+
+  if (!Number.isFinite(amount) ||
+      amount > 100000 ||
+      Math.round(amount * 100) !== amount * 100) {
+    return res.status(400).json({ error: 'Invalid INR amount' });
+  }
+
+  const r = await rate();
+
+  if (!Number.isFinite(r) || r <= 0) {
+    return res.status(503).json({ error: 'USDT rate unavailable' });
+  }
+
+  // Minimum ₹1,000 for INR gateways
+  if (gateway !== 'usdt' && amount < 1000) {
+    return res.status(400).json({
+      error: 'Minimum deposit is ₹1,000'
+    });
+  }
+
+  // Minimum 10 USDT for USDT gateway
+  if (gateway === 'usdt' && amount / r < 10) {
+    return res.status(400).json({
+      error: 'Minimum deposit is 10 USDT',
+      minimumINR: Math.ceil(10 * r * 100) / 100
+    });
+  }
+
+  const orderId = `QX${Date.now()}${crypto.randomBytes(5).toString('hex')}`;
+  const creditUSDT = Math.floor(amount / r * 1e6) / 1e6;
+
+  const payment = await Payment.create({
+    user: req.user._id,
+    gateway,
+    orderId,
+    amountINR: amount,
+    rateINR: r,
+    creditUSDT
+  });
+
+  try {
+    const paymentUrl = await createProvider(
+      gateway, orderId, amount, req.ip
+    );
+
+    res.json({
+      orderId,
+      paymentUrl,
+      rateINR: r,
+      creditUSDT,
+      status: 'pending'
+    });
+  } catch (e) {
+    await Payment.updateOne(
+      { _id: payment._id },
+      { $set: { status: 'failed' } }
+    );
+    res.status(502).json({ error: e.message });
+  }
+}));
+
  app.get('/api/payments/:orderId',auth,asyncH(async(req,res)=>{
   const p=await Payment.findOne({orderId:req.params.orderId,user:req.user._id}).select('orderId status creditUSDT amountINR gateway');
   if(!p)return res.status(404).json({error:'Order not found'});res.json(p);
