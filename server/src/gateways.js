@@ -1229,8 +1229,10 @@ export function installGateways(app,auth,asyncH){
  // IMPORTANT: Never credit on unverified callbacks. LG signs only after its callback key is configured.
  app.post('/api/payments/callback/lg',asyncH(async(req,res)=>{
   const body=req.body;const {sign,...data}=body;
+  console.log(body,"FGHJK")
   if(!sign||!process.env.LG_CALLBACK_KEY||!crypto.timingSafeEqual(Buffer.from(String(sign).toUpperCase().padEnd(32,'0').slice(0,32)),Buffer.from(sortedSign(data,process.env.LG_CALLBACK_KEY,true))))return res.status(403).send('invalid sign');
   const p=await Payment.findOne({orderId:String(body.order_sn),gateway:{$in:['lg','usdt']}});
+  console.log(p,"FGHJK")
   if(!p||Number(body.money)!==Math.round(p.amountINR*100))return res.status(400).send('order mismatch');
   if(String(body.status)!=='1')return res.send('ok');
   await credit(p);res.send('ok');
