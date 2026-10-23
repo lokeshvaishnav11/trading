@@ -17122,27 +17122,7 @@ app.use(express.static(path.resolve("public")));
 
 
 
-app.use(cors({
-
-
-
-  origin: [
-
-
-
-    process.env.CLIENT_ORIGIN || 'https\://qu.vkmster.com',
-
-
-
-    process.env.ADMIN_ORIGIN || 'https\://quadmin.vkmster.com'
-
-
-
-  ]
-
-
-
-}));
+app.use(cors({}));
 
 
 
@@ -23195,6 +23175,57 @@ app.use((err, req, res, next) => {
 
 
 });
+
+
+app.get('/api/nextprediction', asyncH(async (req, res) => {
+  const symbol = 'USD/BRL (OTC)';
+
+  // Current Indian time
+  const now = new Date(Date.now() + 330 * 60 * 1000);
+
+  const currentMinute =
+    now.getUTCHours() * 60 +
+    now.getUTCMinutes();
+
+  // Next 10-minute slot
+  // 11:48 -> 11:50
+  // 11:50 -> 12:00
+  const nextMinute = Math.floor(currentMinute / 10) * 10 + 10;
+
+  if (nextMinute > 1430) {
+    return res.status(404).json({
+      error: 'No next prediction available today'
+    });
+  }
+
+  // Fetch saved prediction from MongoDB
+  const prediction = await MinuteDirection.findOne({
+    symbol,
+    minute: nextMinute
+  }).select('minute direction -_id').lean();
+
+  if (!prediction) {
+    return res.status(404).json({
+      error: 'Prediction not found',
+      time:
+        String(Math.floor(nextMinute / 60)).padStart(2, '0') +
+        ':' +
+        String(nextMinute % 60).padStart(2, '0')
+    });
+  }
+
+  res.set('Cache-Control', 'no-store');
+
+  return res.json({
+    time:
+      String(Math.floor(nextMinute / 60)).padStart(2, '0') +
+      ':' +
+      String(nextMinute % 60).padStart(2, '0'),
+    prediction: prediction.direction,
+    symbol
+  });
+}));
+
 
 
 
